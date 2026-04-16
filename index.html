@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="7P STS">
+  <meta name="theme-color" content="#2176ae">
+  <title>7 Presidents STS</title>
+  <link rel="manifest" href="manifest.json">
+  <link rel="apple-touch-icon" href="icon-192.png">
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body { width: 100%; height: 100%; overflow: hidden; background: #0d2137; }
+    iframe {
+      position: fixed;
+      top: 0; left: 0;
+      width: 100%; height: 100%;
+      border: none;
+      display: block;
+    }
+    #splash {
+      position: fixed;
+      inset: 0;
+      background: #0d2137;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      z-index: 10;
+      transition: opacity 0.4s;
+    }
+    #splash.hidden { opacity: 0; pointer-events: none; }
+    .splash-icon { font-size: 4rem; margin-bottom: 16px; }
+    .splash-title {
+      font-family: -apple-system, sans-serif;
+      font-size: 1.8rem;
+      font-weight: 800;
+      color: #fff;
+      letter-spacing: 1px;
+    }
+    .splash-sub {
+      font-size: 0.8rem;
+      color: rgba(255,255,255,0.5);
+      letter-spacing: 2px;
+      text-transform: uppercase;
+      margin-top: 8px;
+    }
+  </style>
+</head>
+<body>
+  <div id="splash">
+    <div class="splash-icon">🌊</div>
+    <div class="splash-title">7 Presidents STS</div>
+    <div class="splash-sub">Lifeguard Scheduling</div>
+  </div>
+  <iframe
+    id="app-frame"
+    src="https://script.google.com/macros/s/AKfycbzoroL4kNB-5Ts3aTKOpTaLUCz2qXVrpBcKxSmsgWoMF1XLX85Hz9ydmTRA6MUkI5AT/exec"
+    allow="geolocation"
+    onload="document.getElementById('splash').classList.add('hidden')"
+  ></iframe>
+  <script>
+    // Register service worker for PWA installability
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('sw.js').catch(() => {});
+    }
+  </script>
+</body>
+</html>
