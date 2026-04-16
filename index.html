@@ -13,57 +13,152 @@
   <link rel="apple-touch-icon" href="icon-192.png">
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
-    html, body { width: 100%; height: 100%; overflow: hidden; background: #0d2137; }
-    iframe {
-      position: fixed;
-      top: 0; left: 0;
-      width: 100%; height: 100%;
-      border: none;
-      display: block;
+    html, body { width: 100%; height: 100%; overflow: hidden; background: #0d2137; font-family: -apple-system, BlinkMacSystemFont, sans-serif; }
+
+    /* Install screen — shown before iframe loads or if not installed */
+    #install-screen {
+      position: fixed; inset: 0; background: #0d2137;
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      z-index: 20; padding: 32px;
+      text-align: center;
     }
+    #install-screen.hidden { display: none; }
+    #install-screen img { width: 120px; height: 120px; border-radius: 24px; margin-bottom: 20px; }
+    #install-screen h1 { color: #fff; font-size: 1.6rem; font-weight: 800; margin-bottom: 6px; }
+    #install-screen p { color: rgba(255,255,255,0.55); font-size: .88rem; margin-bottom: 32px; line-height: 1.5; }
+
+    .btn-install {
+      background: #2176ae; color: #fff; border: none;
+      padding: 14px 32px; border-radius: 10px;
+      font-size: 1rem; font-weight: 700; cursor: pointer;
+      width: 100%; max-width: 280px; margin-bottom: 12px;
+    }
+    .btn-open {
+      background: transparent; color: rgba(255,255,255,0.5);
+      border: 1px solid rgba(255,255,255,0.2);
+      padding: 12px 32px; border-radius: 10px;
+      font-size: .88rem; cursor: pointer;
+      width: 100%; max-width: 280px;
+    }
+
+    /* iOS instructions panel */
+    #ios-instructions {
+      display: none; background: rgba(255,255,255,0.07);
+      border-radius: 12px; padding: 16px; margin-top: 16px;
+      width: 100%; max-width: 320px; text-align: left;
+    }
+    #ios-instructions.show { display: block; }
+    #ios-instructions p { color: rgba(255,255,255,0.8); font-size: .83rem; margin-bottom: 8px; line-height: 1.5; }
+    #ios-instructions .step { display: flex; gap: 10px; margin-bottom: 8px; align-items: flex-start; }
+    #ios-instructions .num { background: #2176ae; color: #fff; border-radius: 50%; width: 22px; height: 22px; display: flex; align-items: center; justify-content: center; font-size: .75rem; font-weight: 700; flex-shrink: 0; margin-top: 1px; }
+    #ios-instructions .txt { color: rgba(255,255,255,0.75); font-size: .82rem; line-height: 1.4; }
+
+    /* App iframe */
+    iframe {
+      position: fixed; top: 0; left: 0;
+      width: 100%; height: 100%;
+      border: none; display: block; z-index: 5;
+    }
+    iframe.hidden { display: none; }
+
+    /* Loading splash over iframe */
     #splash {
-      position: fixed;
-      inset: 0;
-      background: #0d2137;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      z-index: 10;
-      transition: opacity 0.4s;
+      position: fixed; inset: 0; background: #0d2137;
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      z-index: 10; transition: opacity 0.4s;
     }
     #splash.hidden { opacity: 0; pointer-events: none; }
-    .splash-icon { font-size: 4rem; margin-bottom: 16px; }
-    .splash-title {
-      font-family: -apple-system, sans-serif;
-      font-size: 1.8rem;
-      font-weight: 800;
-      color: #fff;
-      letter-spacing: 1px;
-    }
-    .splash-sub {
-      font-size: 0.8rem;
-      color: rgba(255,255,255,0.5);
-      letter-spacing: 2px;
-      text-transform: uppercase;
-      margin-top: 8px;
-    }
+    #splash img { width: 90px; height: 90px; border-radius: 18px; margin-bottom: 16px; }
+    #splash h2 { color: #fff; font-size: 1.4rem; font-weight: 800; }
+    #splash small { color: rgba(255,255,255,0.4); font-size: .75rem; margin-top: 6px; letter-spacing: 2px; text-transform: uppercase; }
   </style>
 </head>
 <body>
-  <div id="splash">
-    <div class="splash-icon">🌊</div>
-    <div class="splash-title">7 Presidents STS</div>
-    <div class="splash-sub">Lifeguard Scheduling</div>
+
+  <!-- Install screen -->
+  <div id="install-screen">
+    <img src="icon-192.png" alt="7P STS">
+    <h1>7 Presidents STS</h1>
+    <p>Lifeguard Scheduling,<br>Time-Tracking &amp; Statistics</p>
+    <button class="btn-install" id="btn-install" style="display:none">⬇️ Install App</button>
+    <button class="btn-install" id="btn-ios" style="display:none">📲 How to Install on iPhone</button>
+    <div id="ios-instructions">
+      <div class="step"><div class="num">1</div><div class="txt">Tap the <strong>Share button</strong> (□↑) at the bottom of Safari</div></div>
+      <div class="step"><div class="num">2</div><div class="txt">Scroll down and tap <strong>"Add to Home Screen"</strong></div></div>
+      <div class="step"><div class="num">3</div><div class="txt">Tap <strong>"Add"</strong> — the app icon will appear on your home screen</div></div>
+    </div>
+    <button class="btn-open" id="btn-open">Open in browser instead →</button>
   </div>
-  <iframe
-    id="app-frame"
-    src="https://script.google.com/macros/s/AKfycbzoroL4kNB-5Ts3aTKOpTaLUCz2qXVrpBcKxSmsgWoMF1XLX85Hz9ydmTRA6MUkI5AT/exec"
-    allow="geolocation"
-    onload="document.getElementById('splash').classList.add('hidden')"
-  ></iframe>
+
+  <!-- Loading splash (shown while iframe loads) -->
+  <div id="splash" class="hidden">
+    <img src="icon-192.png" alt="7P STS">
+    <h2>7P STS</h2>
+    <small>Loading…</small>
+  </div>
+
+  <!-- App iframe (hidden until opened) -->
+  <iframe id="app-frame" class="hidden"
+    src="YOUR_APPS_SCRIPT_URL_HERE"
+    allow="geolocation *; camera *; microphone *">
+  </iframe>
+
   <script>
-    // Register service worker for PWA installability
+    const SCRIPT_URL = 'YOUR_APPS_SCRIPT_URL_HERE';
+    let deferredPrompt = null;
+    const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent);
+    const isInStandaloneMode = window.matchMedia('(display-mode: standalone)').matches
+      || window.navigator.standalone === true;
+
+    // If already installed as PWA, skip install screen and go straight to app
+    if (isInStandaloneMode) {
+      launchApp();
+    } else {
+      // Show install screen
+      document.getElementById('install-screen').classList.remove('hidden');
+
+      if (isIOS) {
+        // iPhone: show manual instructions button
+        document.getElementById('btn-ios').style.display = 'block';
+        document.getElementById('btn-ios').addEventListener('click', () => {
+          document.getElementById('ios-instructions').classList.toggle('show');
+        });
+      }
+
+      // Android/Chrome: capture install prompt
+      window.addEventListener('beforeinstallprompt', e => {
+        e.preventDefault();
+        deferredPrompt = e;
+        document.getElementById('btn-install').style.display = 'block';
+      });
+
+      document.getElementById('btn-install').addEventListener('click', async () => {
+        if (deferredPrompt) {
+          deferredPrompt.prompt();
+          const { outcome } = await deferredPrompt.userChoice;
+          deferredPrompt = null;
+          if (outcome === 'accepted') launchApp();
+        }
+      });
+
+      document.getElementById('btn-open').addEventListener('click', () => {
+        launchApp();
+      });
+    }
+
+    function launchApp() {
+      document.getElementById('install-screen').classList.add('hidden');
+      document.getElementById('splash').classList.remove('hidden');
+      const frame = document.getElementById('app-frame');
+      frame.classList.remove('hidden');
+      frame.addEventListener('load', () => {
+        setTimeout(() => document.getElementById('splash').classList.add('hidden'), 400);
+      });
+    }
+
+    // Register service worker
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.register('sw.js').catch(() => {});
     }
