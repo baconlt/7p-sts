@@ -101,12 +101,12 @@
 
   <!-- App iframe (hidden until opened) -->
   <iframe id="app-frame" class="hidden"
-    src="YOUR_APPS_SCRIPT_URL_HERE"
+    src="https://script.google.com/macros/s/AKfycbzoroL4kNB-5Ts3aTKOpTaLUCz2qXVrpBcKxSmsgWoMF1XLX85Hz9ydmTRA6MUkI5AT/exec"
     allow="geolocation *; camera *; microphone *">
   </iframe>
 
   <script>
-    const SCRIPT_URL = 'YOUR_APPS_SCRIPT_URL_HERE';
+    const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbzoroL4kNB-5Ts3aTKOpTaLUCz2qXVrpBcKxSmsgWoMF1XLX85Hz9ydmTRA6MUkI5AT/exec';
     let deferredPrompt = null;
     const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent);
     const isInStandaloneMode = window.matchMedia('(display-mode: standalone)').matches
