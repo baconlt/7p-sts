@@ -148,15 +148,36 @@
       });
     }
 
-    function launchApp() {
+   function launchApp() {
       document.getElementById('install-screen').classList.add('hidden');
       document.getElementById('splash').classList.remove('hidden');
+    
       const frame = document.getElementById('app-frame');
-      if (!frame.src) frame.src = "https://script.google.com/macros/s/AKfycbzoroL4kNB-5Ts3aTKOpTaLUCz2qXVrpBcKxSmsgWoMF1XLX85Hz9ydmTRA6MUkI5AT/exec";
+    
+      if (!frame.src) {
+        frame.src = SCRIPT_URL;
+      }
+    
       frame.classList.remove('hidden');
-      frame.addEventListener('load', () => {
-        setTimeout(() => document.getElementById('splash').classList.add('hidden'), 400);
-      });
+    
+      // ✅ 1. Try normal onload
+      let loaded = false;
+    
+      frame.onload = () => {
+        loaded = true;
+        hideSplash();
+      };
+    
+      // ✅ 2. Fallback: force hide after delay (critical)
+      setTimeout(() => {
+        if (!loaded) {
+          hideSplash();
+        }
+      }, 3000); // 2–4s is a good range
+    }
+    
+    function hideSplash() {
+      document.getElementById('splash').classList.add('hidden');
     }
 
     // Register service worker
