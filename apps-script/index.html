@@ -344,7 +344,7 @@ body{font-family:'Barlow',sans-serif;background:var(--foam);color:var(--text);mi
    GUARD MOBILE EXPERIENCE
 ════════════════════════════════════════ */
 /* Bottom tab bar */
-.mob-tabs{display:none;position:fixed;bottom:0;left:0;right:0;height:60px;background:#fff;border-top:1px solid var(--border);z-index:200;flex-direction:row;align-items:stretch;}
+.mob-tabs{display:none;position:fixed;bottom:0;left:0;right:0;height:calc(60px + env(safe-area-inset-bottom));padding-bottom:env(safe-area-inset-bottom);background:#fff;border-top:1px solid var(--border);z-index:200;flex-direction:row;align-items:stretch;}
 .mob-tab{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;cursor:pointer;color:var(--muted);font-size:.6rem;font-weight:600;text-transform:uppercase;letter-spacing:.3px;border:none;background:none;transition:color .15s;}
 .mob-tab .mob-tab-icon{font-size:1.3rem;line-height:1;}
 .mob-tab.on{color:var(--wave);}
@@ -401,7 +401,7 @@ body{font-family:'Barlow',sans-serif;background:var(--foam);color:var(--text);mi
   .sidebar{transform:translateX(-100%);}  /* hidden off-screen by default on mobile */
   .sidebar.open{transform:translateX(0);z-index:150;}
   .sidebar.guard-mobile{display:none !important;}  /* guards use bottom tabs instead */
-  .content{padding:12px 12px 74px;}
+  .content{padding:12px calc(12px + env(safe-area-inset-right)) calc(74px + env(safe-area-inset-bottom)) calc(12px + env(safe-area-inset-left));}
   .topbar{padding:0 14px;}
   .sched-container{display:none !important;}
   .mob-sched{display:flex !important;}
@@ -668,7 +668,42 @@ const myGuard=()=>IMPERSONATE?IMPERSONATE:(S&&S.guard?S.guard:null);
 // BOOT
 // ══════════════════════════════════════════
 window.onload = () => {
-  document.getElementById('login').style.display='flex';
+  document.getElementById('login').style.display = 'flex';
+
+  // Try to restore a saved session from the PWA wrapper via postMessage.
+  // The wrapper holds the token in localStorage and responds to sts_get_session.
+  let sessionChecked = false;
+
+  const fallback = () => { sessionChecked = true; }; // stay on login
+
+  const t = setTimeout(fallback, 1500); // if no parent response, fall through to login
+
+  window.addEventListener('message', function handleSession(e) {
+    if (e.data?.type !== 'sts_session_data') return;
+    if (sessionChecked) return;
+    clearTimeout(t);
+    sessionChecked = true;
+    window.removeEventListener('message', handleSession);
+
+    const { token, guard, role } = e.data;
+    if (!token || !guard) return; // no stored session
+
+    google.script.run
+      .withSuccessHandler(r => {
+        if (r && r.authenticated) {
+          AUTH_TOKEN = token;
+          S = { authenticated: true, guard: r.guard, role: r.role, token };
+          startApp();
+        } else {
+          // Token expired — clear it from the wrapper so next launch shows login
+          window.parent.postMessage({ type: 'sts_clear_session' }, '*');
+        }
+      })
+      .withFailureHandler(() => {}) // network error — stay on login
+      .clientValidateToken(token);
+  });
+
+  window.parent.postMessage({ type: 'sts_get_session' }, '*');
 };
 
 function showLogin() {
@@ -721,6 +756,7 @@ function passwordLogin(){
       if(r&&r.success){
         AUTH_TOKEN=r.token;
         S={authenticated:true,guard:r.guard,role:r.role,token:r.token};
+        window.parent.postMessage({type:'sts_save_session',token:r.token,guard:r.guard,role:r.role},'*');
         if(r.must_change_pw){
           showForcePasswordChange();
         } else {
@@ -827,6 +863,7 @@ function loginErr(m){
 function logout(){
   if(AUTH_TOKEN) google.script.run.clientLogout(AUTH_TOKEN);
   AUTH_TOKEN=null;S=null;GV=false;IMPERSONATE=null;
+  window.parent.postMessage({type:'sts_clear_session'},'*');
   document.getElementById('app').style.display='none';
   document.getElementById('login').style.display='flex';
   showMainLogin();
