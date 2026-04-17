@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="7P STS">
+  <meta name="theme-color" content="#2176ae">
+  <title>7 Presidents STS</title>
+  <link rel="manifest" href="manifest.json">
+  <link rel="apple-touch-icon" href="icon-192.png">
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body { width: 100%; height: 100%; overflow: hidden; background: #0d2137; font-family: -apple-system, BlinkMacSystemFont, sans-serif; }
+
+    #install-screen {
+      position: fixed; inset: 0; background: #0d2137;
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      z-index: 20; padding: 32px; text-align: center;
+    }
+    #install-screen.hidden { display: none; }
+    #install-screen img { width: 120px; height: 120px; border-radius: 24px; margin-bottom: 20px; }
+    #install-screen h1 { color: #fff; font-size: 1.6rem; font-weight: 800; margin-bottom: 6px; }
+    #install-screen p { color: rgba(255,255,255,0.55); font-size: .88rem; margin-bottom: 32px; line-height: 1.5; }
+    .btn-install {
+      background: #2176ae; color: #fff; border: none;
+      padding: 14px 32px; border-radius: 10px;
+      font-size: 1rem; font-weight: 700; cursor: pointer;
+      width: 100%; max-width: 280px; margin-bottom: 12px;
+    }
+    .btn-open {
+      background: transparent; color: rgba(255,255,255,0.5);
+      border: 1px solid rgba(255,255,255,0.2);
+      padding: 12px 32px; border-radius: 10px;
+      font-size: .88rem; cursor: pointer;
+      width: 100%; max-width: 280px;
+    }
+    #ios-instructions {
+      display: none; background: rgba(255,255,255,0.07);
+      border-radius: 12px; padding: 16px; margin-top: 16px;
+      width: 100%; max-width: 320px; text-align: left;
+    }
+    #ios-instructions.show { display: block; }
+    #ios-instructions .step { display: flex; gap: 10px; margin-bottom: 8px; align-items: flex-start; }
+    #ios-instructions .num { background: #2176ae; color: #fff; border-radius: 50%; width: 22px; height: 22px; display: flex; align-items: center; justify-content: center; font-size: .75rem; font-weight: 700; flex-shrink: 0; margin-top: 1px; }
+    #ios-instructions .txt { color: rgba(255,255,255,0.75); font-size: .82rem; line-height: 1.4; }
+
+    iframe {
+      position: fixed; top: 0; left: 0;
+      width: 100%; height: 100%;
+      border: none; display: block; z-index: 5;
+    }
+    iframe.hidden { display: none; }
+  </style>
+</head>
+<body>
+
+  <div id="install-screen">
+    <img src="icon-192.png" alt="7P STS">
+    <h1>7 Presidents STS</h1>
+    <p>Scheduling, Time-Tracking &amp; Statistics<br>Seven Presidents Oceanfront Park</p>
+    <button class="btn-install" id="btn-install" style="display:none">⬇️ Install App</button>
+    <button class="btn-install" id="btn-ios" style="display:none">📲 How to Install on iPhone</button>
+    <div id="ios-instructions">
+      <div class="step"><div class="num">1</div><div class="txt">Tap the <strong>Share button</strong> (□↑) at the bottom of Safari</div></div>
+      <div class="step"><div class="num">2</div><div class="txt">Scroll down and tap <strong>"Add to Home Screen"</strong></div></div>
+      <div class="step"><div class="num">3</div><div class="txt">Tap <strong>"Add"</strong> — the app icon appears on your home screen</div></div>
+    </div>
+    <button class="btn-open" id="btn-open">Open in browser instead →</button>
+  </div>
+
+  <iframe id="app-frame" class="hidden"
+    src="https://script.google.com/macros/s/AKfycbzoroL4kNB-5Ts3aTKOpTaLUCz2qXVrpBcKxSmsgWoMF1XLX85Hz9ydmTRA6MUkI5AT/exec"
+    allow="geolocation *; camera *; microphone *">
+  </iframe>
+
+  <script>
+    const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbzoroL4kNB-5Ts3aTKOpTaLUCz2qXVrpBcKxSmsgWoMF1XLX85Hz9ydmTRA6MUkI5AT/exec';
+    let deferredPrompt = null;
+    const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent);
+    const isInStandaloneMode = window.matchMedia('(display-mode: standalone)').matches
+      || window.navigator.standalone === true;
+
+    if (isInStandaloneMode) {
+      launchApp();
+    } else {
+      document.getElementById('install-screen').classList.remove('hidden');
+
+      if (isIOS) {
+        document.getElementById('btn-ios').style.display = 'block';
+        document.getElementById('btn-ios').addEventListener('click', () => {
+          document.getElementById('ios-instructions').classList.toggle('show');
+        });
+      }
+
+      window.addEventListener('beforeinstallprompt', e => {
+        e.preventDefault();
+        deferredPrompt = e;
+        document.getElementById('btn-install').style.display = 'block';
+      });
+
+      document.getElementById('btn-install').addEventListener('click', async () => {
+        if (deferredPrompt) {
+          deferredPrompt.prompt();
+          const { outcome } = await deferredPrompt.userChoice;
+          deferredPrompt = null;
+          if (outcome === 'accepted') launchApp();
+        }
+      });
+
+      document.getElementById('btn-open').addEventListener('click', () => launchApp());
+    }
+
+    function launchApp() {
+      document.getElementById('install-screen').classList.add('hidden');
+      const frame = document.getElementById('app-frame');
+      frame.classList.remove('hidden');
+    }
+
+    // ── Cross-origin messaging for session persistence ──────────
+    // The iframe (Apps Script) can't reliably use localStorage because
+    // browsers treat it as third-party storage inside a cross-origin iframe.
+    // So the iframe sends messages to this wrapper to store/retrieve the token.
+    window.addEventListener('message', e => {
+      // Only accept messages from our Apps Script
+      if (!e.origin.includes('script.google.com') && !e.origin.includes('googleusercontent.com')) return;
+
+      if (e.data?.type === 'sts_save_session') {
+        try {
+          localStorage.setItem('sts_token', e.data.token);
+          localStorage.setItem('sts_guard', JSON.stringify(e.data.guard));
+          localStorage.setItem('sts_role', e.data.role);
+        } catch(err) {}
+      }
+
+      if (e.data?.type === 'sts_clear_session') {
+        try {
+          localStorage.removeItem('sts_token');
+          localStorage.removeItem('sts_guard');
+          localStorage.removeItem('sts_role');
+        } catch(err) {}
+      }
+
+      if (e.data?.type === 'sts_get_session') {
+        const token = localStorage.getItem('sts_token');
+        const guard = localStorage.getItem('sts_guard');
+        const role  = localStorage.getItem('sts_role');
+        frame.contentWindow.postMessage({
+          type: 'sts_session_data',
+          token: token || null,
+          guard: guard ? JSON.parse(guard) : null,
+          role: role || null
+        }, '*');
+      }
+    });
+
+    // When iframe loads, send it any saved session
+    document.getElementById('app-frame').addEventListener('load', () => {
+      const frame = document.getElementById('app-frame');
+      const token = localStorage.getItem('sts_token');
+      const guard = localStorage.getItem('sts_guard');
+      const role  = localStorage.getItem('sts_role');
+      if (token && guard) {
+        frame.contentWindow.postMessage({
+          type: 'sts_session_data',
+          token,
+          guard: JSON.parse(guard),
+          role
+        }, '*');
+      }
+    });
+
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('sw.js').catch(() => {});
+    }
+  </script>
+</body>
+</html>
