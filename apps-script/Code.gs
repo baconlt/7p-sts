@@ -1575,10 +1575,9 @@ function clientGuardEditTimeRecord(token, d) {
   return { success: true, total_minutes: totalMinutes };
 }
 function clientEditTimeRecord(token,d)             { requireAdmin(token); return editTimeRecord(d); }
-function clientAddManualTimeRecord(token,d) { requireAdmin(token);
+function clientAddManualTimeRecord(token,d) {
   // Admin creates a time record from scratch for any guard on any date
-  requireAdmin();
-  const session = getUserSession();
+  const session = requireAdmin(token);
   const guard = findGuardById(d.guard_id);
   if (!guard) return { success: false, message: 'Guard not found.' };
 
@@ -1615,7 +1614,7 @@ function clientAddManualTimeRecord(token,d) { requireAdmin(token);
     total_minutes:    totalMinutes,
     status:           'complete',
     edited:           'true',
-    edited_by:        session.guard ? session.guard.name : 'Admin',
+    edited_by:        (session && session.guardId ? (findGuardById(session.guardId)||{}).name : null) || 'Admin',
     edited_at:        new Date().toISOString(),
     locked:           'false',
     clock_in_lat:     '',
