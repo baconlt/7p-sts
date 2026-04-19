@@ -1,7 +1,7 @@
 // Minimal service worker — required for PWA install prompt
 // Caches the shell so the app icon works offline
 
-const CACHE = '7p-sts-v3';
+const CACHE = '7p-sts-v4';
 const SHELL = ['/', '/index.html', '/manifest.json', '/icon-192.png', '/icon-512.png'];
 
 self.addEventListener('install', e => {
