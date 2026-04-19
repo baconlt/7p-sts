@@ -669,6 +669,37 @@ const myGuard=()=>IMPERSONATE?IMPERSONATE:(S&&S.guard?S.guard:null);
 // ══════════════════════════════════════════
 window.onload = () => {
   document.getElementById('login').style.display='flex';
+
+  // Ask PWA wrapper for any stored session token
+  let resolved = false;
+  const timeout = setTimeout(() => { resolved = true; }, 1500);
+
+  window.addEventListener('message', function onSessionMsg(e) {
+    if (e.data?.type !== 'sts_session_data') return;
+    if (resolved) return;
+    resolved = true;
+    clearTimeout(timeout);
+    window.removeEventListener('message', onSessionMsg);
+
+    const { token, guard, role } = e.data;
+    if (!token || !guard) return; // no stored session, stay on login
+
+    google.script.run
+      .withSuccessHandler(r => {
+        if (r && r.authenticated) {
+          AUTH_TOKEN = token;
+          S = { authenticated: true, guard: r.guard, role: r.role, token };
+          startApp();
+        } else {
+          // Token expired — wipe it from the wrapper
+          window.parent.postMessage({ type: 'sts_clear_session' }, '*');
+        }
+      })
+      .withFailureHandler(() => {}) // stay on login on network error
+      .clientValidateToken(token);
+  });
+
+  window.parent.postMessage({ type: 'sts_get_session' }, '*');
 };
 
 function showLogin() {
@@ -721,6 +752,7 @@ function passwordLogin(){
       if(r&&r.success){
         AUTH_TOKEN=r.token;
         S={authenticated:true,guard:r.guard,role:r.role,token:r.token};
+        window.parent.postMessage({type:'sts_save_session',token:r.token,guard:r.guard,role:r.role},'*');
         if(r.must_change_pw){
           showForcePasswordChange();
         } else {
@@ -827,6 +859,7 @@ function loginErr(m){
 function logout(){
   if(AUTH_TOKEN) google.script.run.clientLogout(AUTH_TOKEN);
   AUTH_TOKEN=null;S=null;GV=false;IMPERSONATE=null;
+  window.parent.postMessage({type:'sts_clear_session'},'*');
   document.getElementById('app').style.display='none';
   document.getElementById('login').style.display='flex';
   showMainLogin();
