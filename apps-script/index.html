@@ -667,10 +667,33 @@ const myGuard=()=>IMPERSONATE?IMPERSONATE:(S&&S.guard?S.guard:null);
 // ══════════════════════════════════════════
 // BOOT
 // ══════════════════════════════════════════
+function tryResumeSession(token) {
+  if (!token) return;
+  google.script.run
+    .withSuccessHandler(r => {
+      if (r && r.authenticated) {
+        AUTH_TOKEN = token;
+        S = { authenticated: true, guard: r.guard, role: r.role, token };
+        startApp();
+      } else {
+        // Expired — clear everywhere
+        try { localStorage.removeItem('sts_token'); } catch(e) {}
+        window.parent.postMessage({ type: 'sts_clear_session' }, '*');
+      }
+    })
+    .withFailureHandler(() => {}) // stay on login on network error
+    .clientValidateToken(token);
+}
+
 window.onload = () => {
   document.getElementById('login').style.display='flex';
 
-  // Ask PWA wrapper for any stored session token
+  // 1. Try localStorage directly (works for direct desktop access)
+  let localToken = null;
+  try { localToken = localStorage.getItem('sts_token'); } catch(e) {}
+  if (localToken) { tryResumeSession(localToken); return; }
+
+  // 2. If no local token, ask PWA wrapper (works when running inside the iframe)
   let resolved = false;
   const timeout = setTimeout(() => { resolved = true; }, 1500);
 
@@ -680,23 +703,7 @@ window.onload = () => {
     resolved = true;
     clearTimeout(timeout);
     window.removeEventListener('message', onSessionMsg);
-
-    const { token, guard, role } = e.data;
-    if (!token || !guard) return; // no stored session, stay on login
-
-    google.script.run
-      .withSuccessHandler(r => {
-        if (r && r.authenticated) {
-          AUTH_TOKEN = token;
-          S = { authenticated: true, guard: r.guard, role: r.role, token };
-          startApp();
-        } else {
-          // Token expired — wipe it from the wrapper
-          window.parent.postMessage({ type: 'sts_clear_session' }, '*');
-        }
-      })
-      .withFailureHandler(() => {}) // stay on login on network error
-      .clientValidateToken(token);
+    tryResumeSession(e.data.token);
   });
 
   window.parent.postMessage({ type: 'sts_get_session' }, '*');
@@ -752,6 +759,7 @@ function passwordLogin(){
       if(r&&r.success){
         AUTH_TOKEN=r.token;
         S={authenticated:true,guard:r.guard,role:r.role,token:r.token};
+        try { localStorage.setItem('sts_token', r.token); } catch(e) {}
         window.parent.postMessage({type:'sts_save_session',token:r.token,guard:r.guard,role:r.role},'*');
         if(r.must_change_pw){
           showForcePasswordChange();
@@ -859,6 +867,7 @@ function loginErr(m){
 function logout(){
   if(AUTH_TOKEN) google.script.run.clientLogout(AUTH_TOKEN);
   AUTH_TOKEN=null;S=null;GV=false;IMPERSONATE=null;
+  try { localStorage.removeItem('sts_token'); } catch(e) {}
   window.parent.postMessage({type:'sts_clear_session'},'*');
   document.getElementById('app').style.display='none';
   document.getElementById('login').style.display='flex';
