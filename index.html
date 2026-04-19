@@ -49,13 +49,8 @@
     #ios-instructions .txt { color: rgba(255,255,255,0.75); font-size: .82rem; line-height: 1.4; }
 
     iframe {
-      position: fixed;
-      top: env(safe-area-inset-top);
-      left: env(safe-area-inset-left);
-      right: env(safe-area-inset-right);
-      bottom: env(safe-area-inset-bottom);
-      width: calc(100% - env(safe-area-inset-left) - env(safe-area-inset-right));
-      height: calc(100% - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+      position: fixed; top: 0; left: 0;
+      width: 100%; height: 100%;
       border: none; display: block; z-index: 5;
     }
     iframe.hidden { display: none; }
@@ -74,7 +69,7 @@
       <div class="step"><div class="num">2</div><div class="txt">Scroll down and tap <strong>"Add to Home Screen"</strong></div></div>
       <div class="step"><div class="num">3</div><div class="txt">Tap <strong>"Add"</strong> — the app icon appears on your home screen</div></div>
     </div>
-    <button class="btn-open" id="btn-open">Open in browser</button>
+    <button class="btn-open" id="btn-open">Open in browser instead →</button>
   </div>
 
   <iframe id="app-frame" class="hidden"
@@ -116,9 +111,7 @@
         }
       });
 
-      document.getElementById('btn-open').addEventListener('click', () => {
-        window.location.href = SCRIPT_URL;
-      });
+      document.getElementById('btn-open').addEventListener('click', () => launchApp());
     }
 
     function launchApp() {
