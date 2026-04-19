@@ -116,7 +116,9 @@
         }
       });
 
-      document.getElementById('btn-open').addEventListener('click', () => launchApp());
+      document.getElementById('btn-open').addEventListener('click', () => {
+        window.location.href = SCRIPT_URL;
+      });
     }
 
     function launchApp() {
