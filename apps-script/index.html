@@ -1933,17 +1933,51 @@ function reqTable(reqs){
 // ══════════════════════════════════════════
 // ADMIN: GUARDS
 // ══════════════════════════════════════════
+let guardSortCol='pay_rate', guardSortDir=-1;
+const GUARD_STATUS_ORDER={active:0,apply:1,hold:2,no:3};
+
+function sortGuards(col){
+  if(guardSortCol===col){ guardSortDir*=-1; }
+  else { guardSortCol=col; guardSortDir=(col==='pay_rate'?-1:1); }
+  R.guards();
+}
+
 R.guards=function(){
   document.getElementById('topbar-actions').innerHTML=`<button class="btn btn-navy btn-sm" onclick="showAddGuardModal()">+ Guard</button>`;
+
+  const sorted=[...D.guards].sort((a,b)=>{
+    let av,bv;
+    const col=guardSortCol;
+    if(col==='name')       { av=(a.name||'').toLowerCase(); bv=(b.name||'').toLowerCase(); }
+    else if(col==='rank')  { av=RANKS.indexOf(a.rank); bv=RANKS.indexOf(b.rank); if(av<0)av=99; if(bv<0)bv=99; }
+    else if(col==='email') { av=(a.email||'').toLowerCase(); bv=(b.email||'').toLowerCase(); }
+    else if(col==='pay_rate'){ av=parseFloat(a.pay_rate)||0; bv=parseFloat(b.pay_rate)||0; }
+    else if(col==='status'){ av=GUARD_STATUS_ORDER[a.status]??99; bv=GUARD_STATUS_ORDER[b.status]??99; }
+    if(av<bv) return -guardSortDir;
+    if(av>bv) return  guardSortDir;
+    // Secondary: status asc, then pay_rate desc
+    const sd=(GUARD_STATUS_ORDER[a.status]??99)-(GUARD_STATUS_ORDER[b.status]??99);
+    if(sd!==0) return sd;
+    return (parseFloat(b.pay_rate)||0)-(parseFloat(a.pay_rate)||0);
+  });
+
+  function th(col,label){
+    const active=guardSortCol===col;
+    const arrow=active?(guardSortDir===1?'▲':'▼'):'';
+    return `<th style="cursor:pointer;user-select:none;white-space:nowrap${active?';color:var(--wave)':''}" onclick="sortGuards('${col}')">${label}${arrow?` <span style="font-size:.7rem">${arrow}</span>`:'&nbsp;↕'}</th>`;
+  }
+
   document.getElementById('content').innerHTML=`<div class="card">
     <div class="card-title">Guard Roster (${D.guards.length})</div>
-    <table class="tbl"><thead><tr><th>Name</th><th>Rank</th><th>Email</th><th>Pay Rate</th><th>Status</th><th></th></tr></thead>
-    <tbody>${D.guards.map(g=>`<tr>
+    <table class="tbl"><thead><tr>
+      ${th('name','Name')}${th('rank','Rank')}${th('email','Email')}${th('pay_rate','Pay Rate')}${th('status','Status')}<th></th>
+    </tr></thead>
+    <tbody>${sorted.map(g=>`<tr>
       <td><strong>${g.name}</strong></td>
       <td><span class="rank-badge" style="${rs(g.rank)}">${g.rank}</span></td>
       <td style="font-size:.82rem">${g.email}</td>
       <td><span class="pay-hidden" id="pay-${g.id}" onclick="revealPay('${g.id}','${g.pay_rate||0}')" title="Click to reveal">•••</span></td>
-      <td><span class="badge b-${g.status==='active'?'approved':'denied'}">${g.status}</span></td>
+      <td><span class="badge b-${g.status==='active'?'approved':'pending'}">${g.status}</span></td>
       <td class="flex gap2">
         <button class="btn btn-outline btn-sm" onclick="showEditGuardModal('${g.id}')">Edit</button>
         <button class="btn btn-outline btn-sm" onclick="showSetPasswordModal('${g.id}','${g.name}')">🔑 Password</button>
