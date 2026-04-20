@@ -433,6 +433,14 @@ body{font-family:'Barlow',sans-serif;background:var(--foam);color:var(--text);mi
 </head>
 <body>
 
+<div id="splash">
+  <div class="splash-sub-wrap">
+    <div class="splash-sts">7P STS</div>
+    <div class="splash-tag">Lifeguard Scheduling</div>
+  </div>
+  <div class="splash-bar"><div class="splash-fill"></div></div>
+</div>
+
 <div id="login" style="display:none">
   <div class="login-box">
     <div class="login-logo">
@@ -668,7 +676,7 @@ const myGuard=()=>IMPERSONATE?IMPERSONATE:(S&&S.guard?S.guard:null);
 // BOOT
 // ══════════════════════════════════════════
 function tryResumeSession(token) {
-  if (!token) return;
+  if (!token) { showLogin(); return; }
   google.script.run
     .withSuccessHandler(r => {
       if (r && r.authenticated) {
@@ -676,26 +684,27 @@ function tryResumeSession(token) {
         S = { authenticated: true, guard: r.guard, role: r.role, token };
         startApp();
       } else {
-        // Expired — clear everywhere
+        // Expired — clear everywhere then show login
         try { localStorage.removeItem('sts_token'); } catch(e) {}
         window.parent.postMessage({ type: 'sts_clear_session' }, '*');
+        showLogin();
       }
     })
-    .withFailureHandler(() => {}) // stay on login on network error
+    .withFailureHandler(() => showLogin()) // network error — show login
     .clientValidateToken(token);
 }
 
 window.onload = () => {
-  document.getElementById('login').style.display='flex';
+  // Splash stays visible while we decide: resume session or show login
 
-  // 1. Try localStorage directly (works for direct desktop access)
+  // 1. Try localStorage directly (works for direct desktop / Android access)
   let localToken = null;
   try { localToken = localStorage.getItem('sts_token'); } catch(e) {}
   if (localToken) { tryResumeSession(localToken); return; }
 
-  // 2. If no local token, ask PWA wrapper (works when running inside the iframe)
+  // 2. Ask PWA wrapper (works when running inside the iframe on iOS)
   let resolved = false;
-  const timeout = setTimeout(() => { resolved = true; }, 1500);
+  const timeout = setTimeout(() => { resolved = true; showLogin(); }, 1500);
 
   window.addEventListener('message', function onSessionMsg(e) {
     if (e.data?.type !== 'sts_session_data') return;
@@ -709,6 +718,13 @@ window.onload = () => {
   window.parent.postMessage({ type: 'sts_get_session' }, '*');
 };
 
+function hideSplash() {
+  const s = document.getElementById('splash');
+  if (!s) return;
+  s.style.opacity = '0';
+  setTimeout(() => { s.style.display = 'none'; }, 400);
+}
+
 function showLogin() {
   hideSplash();
   showMainLogin();
@@ -716,6 +732,7 @@ function showLogin() {
 }
 
 function startApp() {
+  hideSplash();
   document.getElementById('login').style.display = 'none';
   document.getElementById('app').style.display = 'block';
   setSidebarUser();
