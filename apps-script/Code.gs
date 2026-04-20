@@ -1547,6 +1547,17 @@ function clientGetMyTimeRecords(token, periodId, targetGuardId) {
   const guardId = (targetGuardId && (s.role === 'admin')) ? targetGuardId : s.guard.id;
   return getTimeRecordsForGuard(guardId, periodId);
 }
+function clientGetMyTimeRecordsByRange(token, startDate, endDate, targetGuardId) {
+  const s = getSessionFromToken(token);
+  if (!s) return [];
+  const guardId = (targetGuardId && s.role === 'admin') ? targetGuardId : s.guard.id;
+  return sheetToObjects(SHEETS.TIME_RECORDS).filter(r => {
+    if (String(r.guard_id) !== String(guardId)) return false;
+    const d = toYMD(r.date);
+    return d >= startDate && d <= endDate && r.status !== 'cancelled';
+  });
+}
+
 function clientGuardEditTimeRecord(token, d) {
   // Guards can edit their own completed, unlocked records
   const session = getSessionFromToken(token);

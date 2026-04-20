@@ -3906,7 +3906,29 @@ function loadMyTimeRecords(periodId) {
   const el = document.getElementById('my-time-records');
   if (!el) return;
   const targetId = IMPERSONATE ? IMPERSONATE.id : null;
-  runG('clientGetMyTimeRecords', records => {
+
+  const period = D.activePeriod;
+  const periodStart = period ? ymd(new Date(period.start_date+'T12:00:00')) : null;
+  const periodEnd   = period ? ymd(new Date((period.end_date||period.schedule_thru)+'T12:00:00')) : null;
+
+  // Expand to full Sat-Fri weeks that overlap the pay period
+  function weekSat(dateStr) {
+    const d = new Date(dateStr+'T12:00:00');
+    const day = d.getDay();
+    d.setDate(d.getDate() + (day === 6 ? 0 : -(day+1)));
+    return ymd(d);
+  }
+  function weekFri(dateStr) {
+    const d = new Date(dateStr+'T12:00:00');
+    const day = d.getDay();
+    d.setDate(d.getDate() + (day === 5 ? 0 : (5-day)));
+    return ymd(d);
+  }
+
+  const fetchStart = periodStart ? weekSat(periodStart) : null;
+  const fetchEnd   = periodEnd   ? weekFri(periodEnd)   : null;
+
+  const handler = records => {
     if (!records || !records.length) {
       el.innerHTML = '<div class="empty" style="padding:16px"><div class="ei">⏱</div><p>No time records for this period.</p></div>';
       return;
@@ -3926,8 +3948,14 @@ function loadMyTimeRecords(periodId) {
       weeks[wk].records.push(r);
     });
 
-    // Period totals
-    let periodReg=0, periodOT=0;
+    // Pay period totals — only records within the pay period dates
+    const periodRecs = periodStart && periodEnd
+      ? records.filter(r => r.date >= periodStart && r.date <= periodEnd)
+      : records;
+    const ppMins = periodRecs.reduce((s,r)=>s+roundQtr(parseInt(r.total_minutes)||0),0);
+    const ppHrs  = ppMins / 60;
+    const periodReg = Math.min(ppHrs, 40);
+    const periodOT  = Math.max(0, ppHrs - 40);
 
     const weekBlocks = Object.keys(weeks).sort().map(wk => { // oldest week first
       const { sat, records: wkRecs } = weeks[wk];
@@ -3935,10 +3963,7 @@ function loadMyTimeRecords(periodId) {
       const sorted = [...wkRecs].sort((a,b) => a.date > b.date ? 1 : -1); // oldest first within week
       const wkMins = wkRecs.reduce((s,r)=>s+roundQtr(parseInt(r.total_minutes)||0),0);
       const wkHrs  = wkMins / 60;
-      const regHrs = Math.min(wkHrs, 40);
       const otHrs  = Math.max(0, wkHrs - 40);
-      periodReg += regHrs;
-      periodOT  += otHrs;
 
       const rows = sorted.map(r => {
         const d   = new Date(r.date+'T12:00:00');
@@ -4001,7 +4026,13 @@ function loadMyTimeRecords(periodId) {
         </div>
       </div>
       ${weekBlocks}`;
-  }, null, periodId, targetId);
+  };
+
+  if (fetchStart && fetchEnd) {
+    runG('clientGetMyTimeRecordsByRange', handler, null, fetchStart, fetchEnd, targetId);
+  } else {
+    runG('clientGetMyTimeRecords', handler, null, periodId, targetId);
+  }
 }
 
 // Guard self-edit of a completed time record
