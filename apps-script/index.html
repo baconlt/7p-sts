@@ -2904,7 +2904,7 @@ function doCreateShift(){
 }
 
 function showAddGuardModal(){
-  const pChecks=D.posts.map(p=>`<label style="display:inline-flex;align-items:center;gap:5px;margin:0 8px 4px 0;white-space:nowrap"><input type="checkbox" class="pc" value="${p.id}"> ${p.name}</label>`).join('');
+  const pChecks=D.posts.map(p=>`<label style="display:inline-flex;align-items:center;gap:5px"><input type="checkbox" class="pc" value="${p.id}"> ${p.name}</label>`).join('');
   showModal(`<div class="modal-title">👤 Add Guard</div>
     <div class="row2">
       <div class="fg"><label>Name</label><input type="text" id="g-name" class="inp"></div>
@@ -2921,7 +2921,7 @@ function showAddGuardModal(){
       </select></div>
     </div>
     <div class="fg" id="g-pw-w" style="display:none"><label>Temp Password</label><input type="text" id="g-pw" class="inp"></div>
-    <div class="fg"><label>Post Eligibility</label>${pChecks||'<p class="muted">Add posts first.</p>'}</div>
+    <div class="fg"><label>Post Eligibility</label><div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:6px">${pChecks||'<p class="muted">Add posts first.</p>'}</div></div>
     <div class="modal-foot"><button class="btn btn-outline" onclick="closeModal()">Cancel</button><button class="btn btn-navy" onclick="doCreateGuard()">Add Guard</button></div>`);
 }
 function doCreateGuard(){
