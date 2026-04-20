@@ -735,6 +735,10 @@ function startApp() {
   hideSplash();
   document.getElementById('login').style.display = 'none';
   document.getElementById('app').style.display = 'block';
+  document.getElementById('content').innerHTML =
+    '<div style="display:flex;align-items:center;justify-content:center;height:40vh;flex-direction:column;gap:12px;color:var(--muted)">' +
+    '<span class="spinner" style="width:22px;height:22px;border-width:3px"></span>' +
+    '<span style="font-size:.9rem;font-weight:600">Loading Dashboard…</span></div>';
   setSidebarUser();
   loadCore(() => {
     loadPeriodData(() => {
