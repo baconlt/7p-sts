@@ -84,7 +84,9 @@
     const isInStandaloneMode = window.matchMedia('(display-mode: standalone)').matches
       || window.navigator.standalone === true;
 
-    if (isInStandaloneMode) {
+    const hasSession = !!localStorage.getItem('sts_token');
+
+    if (isInStandaloneMode || hasSession) {
       launchApp();
     } else {
       document.getElementById('install-screen').classList.remove('hidden');
