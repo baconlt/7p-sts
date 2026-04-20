@@ -3215,7 +3215,7 @@ function mobGo(panel) {
 function showMobTabs() {
   const tabs = document.getElementById('mob-tabs');
   const sidebar = document.getElementById('sidebar');
-  const isGuardMobile = !isAdmin() && isMobile();
+  const isGuardMobile = !isTrueAdmin() && isMobile();
   if (tabs) tabs.style.display = isGuardMobile ? 'flex' : 'none';
   // Hide sidebar entirely for guards on mobile (they use bottom tabs)
   // Admins on mobile get the hamburger + slide-in sidebar
