@@ -374,15 +374,14 @@ function getAllGuards() {
   return sheetToObjects(SHEETS.GUARDS).filter(g => g.status !== 'inactive');
 }
 function createGuard(d) {
-  requireAdmin();
   const id = uid('G');
   appendRow(SHEETS.GUARDS, { id, name: d.name, email: d.email, phone: d.phone||'', rank: d.rank,
     pay_rate: d.pay_rate||0, post_eligibility: d.post_eligibility||'', status:'active',
     auth_type: d.auth_type||'google', temp_password: d.temp_password||'', created_at: new Date().toISOString() });
   return { success: true, id };
 }
-function updateGuard(d) { requireAdmin(); return updateById(SHEETS.GUARDS, d); }
-function deactivateGuard(id) { requireAdmin(); return updateById(SHEETS.GUARDS, { id, status:'inactive' }); }
+function updateGuard(d) { return updateById(SHEETS.GUARDS, d); }
+function deactivateGuard(id) { return updateById(SHEETS.GUARDS, { id, status:'inactive' }); }
 
 // ── POSTS ────────────────────────────────────────────────────
 
@@ -391,7 +390,6 @@ function getAllPosts() {
   return posts.sort((a,b) => (parseFloat(a.sort_order)||99) - (parseFloat(b.sort_order)||99));
 }
 function createPost(d) {
-  requireAdmin();
   const id = uid('P');
   const allPosts = sheetToObjects(SHEETS.POSTS);
   const nextOrder = allPosts.length + 1;
@@ -399,7 +397,6 @@ function createPost(d) {
   return { success: true, id };
 }
 function updatePost(d) {
-  requireAdmin();
   return updateById(SHEETS.POSTS, d);
 }
 
@@ -421,15 +418,14 @@ function getActivePeriod() {
 }
 
 function createPeriod(d) {
-  requireAdmin();
   const id = uid('PP');
   appendRow(SHEETS.PERIODS, { id, start_date: d.start_date, end_date: d.end_date,
     schedule_thru: d.schedule_thru, locked: 'false', payroll_due: d.payroll_due||'',
     availability_deadline: d.availability_deadline||'', time_report_due: d.time_report_due||'' });
   return { success: true, id };
 }
-function updatePeriod(d) { requireAdmin(); return updateById(SHEETS.PERIODS, d); }
-function lockPeriod(id) { requireAdmin(); return updateById(SHEETS.PERIODS, { id, locked:'true' }); }
+function updatePeriod(d) { return updateById(SHEETS.PERIODS, d); }
+function lockPeriod(id) { return updateById(SHEETS.PERIODS, { id, locked:'true' }); }
 
 // ── SHIFTS ───────────────────────────────────────────────────
 
@@ -450,7 +446,6 @@ function getOpenShiftsForGuard(guardId) {
   });
 }
 function createShift(d) {
-  requireAdmin();
   const qty = parseInt(d.quantity)||1;
   const seriesId = (d.type==='recurring') ? uid('SR') : '';
   const created = [];
@@ -469,7 +464,6 @@ function createShift(d) {
 
 function assignShift(d) {
   // Fill-or-create: find an open slot for this date/post/template, else create new
-  requireAdmin();
   const all = sheetToObjects(SHEETS.SHIFTS);
   const open = all.find(s =>
     s.date && toYMD(s.date)===toYMD(d.date) &&
@@ -493,7 +487,6 @@ function assignShift(d) {
 
 function checkOpenSlot(date, postId, templateCode) {
   // Returns whether an open slot exists — used before assigning to warn admin
-  requireAdmin();
   const all = sheetToObjects(SHEETS.SHIFTS);
   const open = all.find(s =>
     s.date && toYMD(s.date)===toYMD(date) &&
@@ -507,7 +500,6 @@ function checkOpenSlot(date, postId, templateCode) {
 
 function deleteShiftSeries(seriesId, fromDate, scope) {
   // scope: 'one' (handled by cancelShift), 'future', 'all'
-  requireAdmin();
   const sheet = SH(SHEETS.SHIFTS);
   const data = sheet.getDataRange().getValues();
   const headers = data[0];
@@ -553,8 +545,8 @@ function recurringShifts(d, seriesId, qty) {
     cur = advance(cur);
   }
 }
-function updateShift(d) { requireAdmin(); return updateById(SHEETS.SHIFTS, d); }
-function cancelShift(id) { requireAdmin(); return updateById(SHEETS.SHIFTS, { id, status:'cancelled' }); }
+function updateShift(d) { return updateById(SHEETS.SHIFTS, d); }
+function cancelShift(id) { return updateById(SHEETS.SHIFTS, { id, status:'cancelled' }); }
 
 // ── AVAILABILITY ─────────────────────────────────────────────
 
@@ -1144,7 +1136,6 @@ function clientUpdateShift(token,d)        { requireAdmin(token); return updateS
 function clientCancelShift(token,id)       { requireAdmin(token); return cancelShift(id); }
 function clientDeleteShiftSeries(token,sid,from,scope) { requireAdmin(token); return deleteShiftSeries(sid,from,scope); }
 function clientBulkCreateShifts(token,d) { requireAdmin(token);
-  requireAdmin();
   const { pay_period_id, post_id, template_code, start_date, end_date,
           days_of_week, qty_per_day, notes } = d;
   if (!pay_period_id||!post_id||!template_code||!start_date||!end_date)
