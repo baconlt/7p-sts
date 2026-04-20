@@ -2904,7 +2904,7 @@ function doCreateShift(){
 }
 
 function showAddGuardModal(){
-  const pChecks=D.posts.map((p,i)=>`<label style="display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:6px;background:${i%2===0?'var(--foam)':'#fff'};cursor:pointer"><input type="checkbox" class="pc" value="${p.id}" style="flex-shrink:0"> <span>${p.name}</span></label>`).join('');
+  const pChecks=D.posts.map((p,i)=>`<label style="display:flex;align-items:center;gap:8px;padding:6px 8px;background:${i%2===0?'var(--foam)':'#fff'};cursor:pointer"><input type="checkbox" class="pc" value="${p.id}" style="flex-shrink:0"> <span style="color:var(--text);font-size:.9rem">${p.name}</span></label>`).join('');
   showModal(`<div class="modal-title">👤 Add Guard</div>
     <div class="row2">
       <div class="fg"><label>Name</label><input type="text" id="g-name" class="inp"></div>
