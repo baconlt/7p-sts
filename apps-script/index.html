@@ -3932,7 +3932,7 @@ function loadMyTimeRecords(periodId) {
     const weekBlocks = Object.keys(weeks).sort().map(wk => { // oldest week first
       const { sat, records: wkRecs } = weeks[wk];
       const fri = new Date(sat); fri.setDate(sat.getDate()+6);
-    const sorted = [...records].sort((a,b) => a.date > b.date ? 1 : -1); // oldest first within week
+      const sorted = [...wkRecs].sort((a,b) => a.date > b.date ? 1 : -1); // oldest first within week
       const wkMins = wkRecs.reduce((s,r)=>s+roundQtr(parseInt(r.total_minutes)||0),0);
       const wkHrs  = wkMins / 60;
       const regHrs = Math.min(wkHrs, 40);
@@ -3975,28 +3975,29 @@ function loadMyTimeRecords(periodId) {
           </div>
         </div>
         ${rows}
-        <div style="display:flex;gap:16px;padding:6px 0;font-size:.78rem;color:var(--muted);border-top:1px solid var(--border);margin-top:2px">
-          <span>Reg: <strong style="color:var(--text)">${regHrs.toFixed(2)}h</strong></span>
-          ${otHrs>0?`<span>OT: <strong style="color:var(--coral)">${otHrs.toFixed(2)}h</strong></span>`:''}
-          <span>Total: <strong style="color:var(--navy)">${wkHrs.toFixed(2)}h</strong></span>
-        </div>
       </div>`;
     }).join('');
 
     const periodTotal = periodReg + periodOT;
+    const periodLabel = D.activePeriod
+      ? `Pay Period: ${fd(D.activePeriod.start_date)} – ${fd(D.activePeriod.end_date)}`
+      : 'Pay Period';
     el.innerHTML = `
-      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:14px;text-align:center">
-        <div style="background:var(--foam);border-radius:8px;padding:8px">
-          <div style="font-family:'Barlow Condensed',sans-serif;font-size:1.3rem;font-weight:800;color:var(--navy)">${periodTotal.toFixed(2)}h</div>
-          <div style="font-size:.68rem;color:var(--muted);text-transform:uppercase">Total</div>
-        </div>
-        <div style="background:var(--foam);border-radius:8px;padding:8px">
-          <div style="font-family:'Barlow Condensed',sans-serif;font-size:1.3rem;font-weight:800;color:var(--navy)">${periodReg.toFixed(2)}h</div>
-          <div style="font-size:.68rem;color:var(--muted);text-transform:uppercase">Regular</div>
-        </div>
-        <div style="background:${periodOT>0?'#fef2f2':'var(--foam)'};border-radius:8px;padding:8px">
-          <div style="font-family:'Barlow Condensed',sans-serif;font-size:1.3rem;font-weight:800;color:${periodOT>0?'var(--coral)':'var(--navy)'}"">${periodOT.toFixed(2)}h</div>
-          <div style="font-size:.68rem;color:var(--muted);text-transform:uppercase">Overtime</div>
+      <div style="margin-bottom:16px;background:var(--navy);border-radius:10px;padding:12px 14px">
+        <div style="font-size:.7rem;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:rgba(255,255,255,.5);margin-bottom:8px">${periodLabel}</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;text-align:center">
+          <div>
+            <div style="font-family:'Barlow Condensed',sans-serif;font-size:1.4rem;font-weight:800;color:#fff">${periodTotal.toFixed(2)}h</div>
+            <div style="font-size:.65rem;color:rgba(255,255,255,.55);text-transform:uppercase">Total</div>
+          </div>
+          <div>
+            <div style="font-family:'Barlow Condensed',sans-serif;font-size:1.4rem;font-weight:800;color:#fff">${periodReg.toFixed(2)}h</div>
+            <div style="font-size:.65rem;color:rgba(255,255,255,.55);text-transform:uppercase">Regular</div>
+          </div>
+          <div>
+            <div style="font-family:'Barlow Condensed',sans-serif;font-size:1.4rem;font-weight:800;color:${periodOT>0?'var(--sun)':'#fff'}">${periodOT.toFixed(2)}h</div>
+            <div style="font-size:.65rem;color:rgba(255,255,255,.55);text-transform:uppercase">Overtime</div>
+          </div>
         </div>
       </div>
       ${weekBlocks}`;
