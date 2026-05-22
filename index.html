@@ -85,6 +85,7 @@
       || window.navigator.standalone === true;
 
     const hasSession = !!localStorage.getItem('sts_token');
+    const frame = document.getElementById('app-frame');
 
     if (isInStandaloneMode || hasSession) {
       launchApp();
@@ -118,7 +119,6 @@
 
     function launchApp() {
       document.getElementById('install-screen').classList.add('hidden');
-      const frame = document.getElementById('app-frame');
       frame.classList.remove('hidden');
     }
 
@@ -159,20 +159,28 @@
       }
     });
 
-    // When iframe loads, send it any saved session
-    document.getElementById('app-frame').addEventListener('load', () => {
-      const frame = document.getElementById('app-frame');
+    function sendSessionToFrame() {
       const token = localStorage.getItem('sts_token');
       const guard = localStorage.getItem('sts_guard');
       const role  = localStorage.getItem('sts_role');
       if (token && guard) {
-        frame.contentWindow.postMessage({
-          type: 'sts_session_data',
-          token,
-          guard: JSON.parse(guard),
-          role
-        }, '*');
+        try {
+          frame.contentWindow.postMessage({
+            type: 'sts_session_data',
+            token,
+            guard: JSON.parse(guard),
+            role
+          }, '*');
+        } catch(err) {}
       }
+    }
+
+    // When iframe loads, send it any saved session
+    frame.addEventListener('load', sendSessionToFrame);
+
+    // Re-send session when the PWA is foregrounded (iOS resumes from background)
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible') sendSessionToFrame();
     });
 
     if ('serviceWorker' in navigator) {
