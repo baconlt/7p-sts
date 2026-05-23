@@ -73,7 +73,6 @@
   </div>
 
   <iframe id="app-frame" class="hidden"
-    src="https://script.google.com/macros/s/AKfycbzoroL4kNB-5Ts3aTKOpTaLUCz2qXVrpBcKxSmsgWoMF1XLX85Hz9ydmTRA6MUkI5AT/exec"
     allow="geolocation *; camera *; microphone *">
   </iframe>
 
@@ -119,6 +118,12 @@
 
     function launchApp() {
       document.getElementById('install-screen').classList.add('hidden');
+      // Inject token into hash so the iframe can read it synchronously on load,
+      // with no postMessage timing dependency (critical for iOS cold starts).
+      if (!frame.src) {
+        const token = localStorage.getItem('sts_token');
+        frame.src = SCRIPT_URL + (token ? '#st=' + encodeURIComponent(token) : '');
+      }
       frame.classList.remove('hidden');
     }
 

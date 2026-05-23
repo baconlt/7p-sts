@@ -756,7 +756,17 @@ window.onload = () => {
   try { localToken = localStorage.getItem('sts_token'); } catch(e) {}
   if (localToken) { tryResumeSession(localToken); return; }
 
-  // 2. Ask PWA wrapper (works when running inside the iframe on iOS)
+  // 2. Token injected via URL hash by PWA wrapper (most reliable on iOS — no postMessage timing)
+  try {
+    const hash = window.location.hash;
+    if (hash.startsWith('#st=')) {
+      const hashToken = decodeURIComponent(hash.slice(4));
+      history.replaceState(null, '', window.location.pathname + window.location.search);
+      if (hashToken) { tryResumeSession(hashToken); return; }
+    }
+  } catch(e) {}
+
+  // 3. Ask PWA wrapper via postMessage (fallback)
   let resolved = false;
   const timeout = setTimeout(() => { resolved = true; showLogin(); }, 3000);
 
