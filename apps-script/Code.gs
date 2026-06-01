@@ -19,17 +19,80 @@ const SHEETS = {
   NOTIFICATIONS:  'Notifications',
   TIME_RECORDS:   'TimeRecords',
   SHIFT_STATS:    'ShiftStats',
-  SESSIONS:       'Sessions'
+  SESSIONS:       'Sessions',
+  LOCATIONS:      'Locations'
 };
 
 // ── ENTRY POINT ─────────────────────────────────────────────
 
-function doGet() {
-  return HtmlService.createTemplateFromFile('index')
-    .evaluate()
+function doGet(e) {
+  if (e && e.parameter && e.parameter.board === '1') {
+    return HtmlService.createTemplateFromFile('Board')
+      .evaluate()
+      .setTitle('7P Beach Assignments')
+      .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL)
+      .addMetaTag('viewport', 'width=device-width, initial-scale=1');
+  }
+  const tmpl = HtmlService.createTemplateFromFile('index');
+  tmpl.inviteToken = (e && e.parameter && e.parameter.invite) ? String(e.parameter.invite) : '';
+  tmpl.sessionToken = (e && e.parameter && e.parameter.st) ? String(e.parameter.st) : '';
+  return tmpl.evaluate()
     .setTitle('7 Presidents STS')
     .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL)
     .addMetaTag('viewport', 'width=device-width, initial-scale=1');
+}
+
+function getBoardData(dateStr) {
+  const date = dateStr || toYMD(new Date());
+  const guards = sheetToObjects(SHEETS.GUARDS).filter(g => g.status !== 'inactive');
+  const posts = getAllPosts();
+  const shifts = sheetToObjects(SHEETS.SHIFTS).filter(s =>
+    toYMD(s.date) === date && s.assigned_guard_id && s.status !== 'cancelled'
+  );
+  const guardMap = {};
+  guards.forEach(g => { guardMap[String(g.id)] = g; });
+  const adminPostIds = new Set(posts.filter(p => p.name.trim().toLowerCase() === 'admin').map(p => p.id));
+  const BOARD_RANK_ORDER = [
+    'lifeguard supervisor','crew captain','beach captain','captain',
+    'lieutenant','vet','guard','rookie','cadet','replacement','volunteer'
+  ];
+  const boardRankIdx = r => { const i = BOARD_RANK_ORDER.indexOf((r||'').toLowerCase()); return i < 0 ? 99 : i; };
+  const boardSort = (a, b) => boardRankIdx(a.rank) - boardRankIdx(b.rank) || parseFloat(b.pay_rate||0) - parseFloat(a.pay_rate||0);
+  const officers = shifts
+    .filter(s => adminPostIds.has(s.post_id))
+    .map(s => guardMap[String(s.assigned_guard_id)])
+    .filter(Boolean)
+    .map(g => ({ name: g.name, rank: g.rank || '', pay_rate: g.pay_rate || 0 }))
+    .sort(boardSort);
+  const postData = posts
+    .filter(p => !adminPostIds.has(p.id))
+    .map(post => {
+      const postGuards = shifts
+        .filter(s => s.post_id === post.id)
+        .map(s => guardMap[String(s.assigned_guard_id)])
+        .filter(Boolean)
+        .map(g => ({ name: g.name, rank: g.rank || '', pay_rate: g.pay_rate || 0 }))
+        .sort(boardSort);
+      return { name: post.name, color: post.color || '#2176ae', guards: postGuards };
+    }).filter(p => p.guards.length > 0);
+  const rankColors = {
+    'Lifeguard Supervisor':'#d4a017','Crew Captain':'#d4a017',
+    'Captain':'#ef4444','Beach Captain':'#ef4444',
+    'Lieutenant':'#f97316','Vet':'#3b82f6',
+    'Guard':'#a78bfa','Rookie':'#a78bfa',
+    'Replacement':'#94a3b8','Volunteer':'#94a3b8',
+    'Cadet':'#6ee7b7'
+  };
+  getAllConfig().filter(c => c.key && c.key.startsWith('rank_color_')).forEach(c => {
+    const k = c.key.slice(11).replace(/_/g, ' ');
+    const match = Object.keys(rankColors).find(r => r.toLowerCase() === k.toLowerCase());
+    if (match && c.value) rankColors[match] = c.value;
+  });
+  return { date, posts: postData, officers, rankColors };
+}
+
+function clientGetBoardUrl(token) {
+  return ScriptApp.getService().getUrl() + '?board=1';
 }
 
 // ── AUTH ─────────────────────────────────────────────────────
@@ -115,6 +178,30 @@ function destroySession(token) {
   }
 }
 
+// Run once from the Apps Script editor to install time-based triggers
+function addTournamentTemplate() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const tmpl = ss.getSheetByName('ShiftTemplates');
+  const data = tmpl.getDataRange().getValues();
+  if (data.some(row => row[0] === 'TOURN')) { Logger.log('TOURN already exists.'); return; }
+  tmpl.appendRow(['TOURN', 'Tournament', '6:00 PM', '8:30 PM', 2.5, 0]);
+  Logger.log('Tournament template added.');
+}
+
+function installTriggers() {
+  // Remove any existing triggers for these functions to avoid duplicates
+  ScriptApp.getProjectTriggers().forEach(t => {
+    const fn = t.getHandlerFunction();
+    if (fn === 'autoClockOutCheck' || fn === 'cleanExpiredSessions') {
+      ScriptApp.deleteTrigger(t);
+    }
+  });
+  ScriptApp.newTrigger('autoClockOutCheck')
+    .timeBased().everyHours(1).create();
+  ScriptApp.newTrigger('cleanExpiredSessions')
+    .timeBased().everyDays(1).create();
+}
+
 // Clean up expired sessions (run periodically as trigger)
 function cleanExpiredSessions() {
   const sheet = SH(SHEETS.SESSIONS);
@@ -198,6 +285,35 @@ function changePassword(token, currentPassword, newPassword) {
 
   const { hash } = hashPassword(newPassword);
   updateById(SHEETS.GUARDS, { id: guard.id, password_hash: hash, temp_password: '', must_change_pw: 'false' });
+
+  if (guard.email) {
+    const loginUrl = 'https://baconlt.github.io/7p-sts/';
+    const htmlBody = `<div style="font-family:Arial,sans-serif;max-width:540px;margin:0 auto">
+  <div style="background:#0d2137;padding:20px 24px;border-radius:8px 8px 0 0">
+    <div style="font-size:1.3rem;font-weight:800;color:#fff;letter-spacing:1px">7 Presidents STS</div>
+    <div style="color:#57a0d3;font-size:.8rem;letter-spacing:2px;text-transform:uppercase;margin-top:3px">Lifeguard Scheduling System</div>
+  </div>
+  <div style="background:#fff;padding:28px 24px;border:1px solid #d0e4ef;border-top:none">
+    <p style="font-size:1rem;margin-bottom:12px">Hi ${guard.name},</p>
+    <p style="margin-bottom:18px">Your password has been updated successfully.</p>
+    <div style="text-align:center;margin:24px 0">
+      <a href="${loginUrl}" style="background:#0d2137;color:#fff;text-decoration:none;padding:14px 28px;border-radius:8px;font-weight:700;font-size:1rem;display:inline-block;letter-spacing:.5px">Log In Here →</a>
+    </div>
+    <p style="color:#6b8a9a;font-size:.82rem;margin-top:18px">If the button doesn't work, copy and paste this link into your browser:</p>
+    <p style="font-size:.78rem;word-break:break-all;color:#2176ae;margin-bottom:18px">${loginUrl}</p>
+    <hr style="border:none;border-top:1px solid #d0e4ef;margin:18px 0">
+    <p style="color:#6b8a9a;font-size:.78rem">If you did not make this change, contact your administrator immediately.</p>
+    <p style="color:#6b8a9a;font-size:.78rem;margin-top:8px">— 7 Presidents STS</p>
+  </div>
+</div>`;
+    const body = `Hi ${guard.name},\n\nYour password has been updated successfully.\n\nLog in here:\n${loginUrl}\n\nIf you did not make this change, contact your administrator immediately.\n\n— 7 Presidents STS`;
+    try {
+      MailApp.sendEmail({ to: guard.email, subject: 'Your 7 Presidents STS password has been updated', htmlBody, body });
+    } catch(e) {
+      Logger.log('Password change email error: ' + e.message);
+    }
+  }
+
   return { success: true };
 }
 
@@ -241,7 +357,7 @@ function ensureGuardColumns_() {
   // Add reset_token and reset_token_expires columns to Guards sheet if missing
   const sheet = SH(SHEETS.GUARDS);
   const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
-  const needed = ['password_hash','must_change_pw','reset_token','reset_token_expires'];
+  const needed = ['password_hash','must_change_pw','reset_token','reset_token_expires','invite_token','invite_token_expires','locker_number','parking_pass'];
   needed.forEach(col => {
     if (!headers.includes(col)) {
       const newCol = sheet.getLastColumn() + 1;
@@ -250,6 +366,88 @@ function ensureGuardColumns_() {
       Logger.log('Added column: ' + col);
     }
   });
+}
+
+function generateInviteToken_() {
+  return Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, Date.now() + ':' + Math.random() + ':' + Math.random())
+    .map(b => (b < 0 ? b + 256 : b).toString(16).padStart(2, '0')).join('').slice(0, 48);
+}
+
+function sendInvite(adminToken, guardId) {
+  requireAdmin(adminToken);
+  ensureGuardColumns_();
+  const guard = findGuardById(guardId);
+  if (!guard) return { success: false, message: 'Guard not found.' };
+  if (guard.status === 'inactive') return { success: false, message: 'Guard is inactive.' };
+
+  const inviteToken = generateInviteToken_();
+  const expires = new Date(Date.now() + 7 * 24 * 3600 * 1000).toISOString();
+  const appUrl = ScriptApp.getService().getUrl();
+  const inviteUrl = appUrl + '?invite=' + inviteToken;
+
+  updateById(SHEETS.GUARDS, { id: guardId, invite_token: inviteToken, invite_token_expires: expires });
+
+  const htmlBody = `<div style="font-family:Arial,sans-serif;max-width:540px;margin:0 auto">
+  <div style="background:#0d2137;padding:20px 24px;border-radius:8px 8px 0 0">
+    <div style="font-size:1.3rem;font-weight:800;color:#fff;letter-spacing:1px">7 Presidents STS</div>
+    <div style="color:#57a0d3;font-size:.8rem;letter-spacing:2px;text-transform:uppercase;margin-top:3px">Lifeguard Scheduling System</div>
+  </div>
+  <div style="background:#fff;padding:28px 24px;border:1px solid #d0e4ef;border-top:none">
+    <p style="font-size:1rem;margin-bottom:12px">Hi ${guard.name},</p>
+    <p style="margin-bottom:14px">You've been invited to join the <strong>7 Presidents Lifeguard Scheduling System</strong> — the hub for shift scheduling, time tracking, and availability management for Ocean Rescue &amp; Events.</p>
+    <p style="margin-bottom:18px">Click the button below to set up your account. This link is valid for <strong>7 days</strong> and can only be used once.</p>
+    <div style="text-align:center;margin:24px 0">
+      <a href="${inviteUrl}" style="background:#0d2137;color:#fff;text-decoration:none;padding:14px 28px;border-radius:8px;font-weight:700;font-size:1rem;display:inline-block;letter-spacing:.5px">Set Up My Account →</a>
+    </div>
+    <p style="color:#6b8a9a;font-size:.82rem;margin-top:18px">If the button doesn't work, copy and paste this link into your browser:</p>
+    <p style="font-size:.78rem;word-break:break-all;color:#2176ae;margin-bottom:18px">${inviteUrl}</p>
+    <hr style="border:none;border-top:1px solid #d0e4ef;margin:18px 0">
+    <p style="color:#4a6a7a;font-size:.83rem;margin-bottom:8px">Already set up your account?</p>
+    <div style="text-align:center;margin:10px 0 18px">
+      <a href="https://baconlt.github.io/7p-sts/" style="background:#2176ae;color:#fff;text-decoration:none;padding:10px 22px;border-radius:8px;font-weight:700;font-size:.9rem;display:inline-block">Log In Here →</a>
+    </div>
+    <hr style="border:none;border-top:1px solid #d0e4ef;margin:18px 0">
+    <p style="color:#6b8a9a;font-size:.78rem">If you weren't expecting this invitation, you can safely ignore this email. The link will expire in 7 days.</p>
+    <p style="color:#6b8a9a;font-size:.78rem;margin-top:8px">— 7 Presidents STS</p>
+  </div>
+</div>`;
+  const body = `Hi ${guard.name},\n\nYou've been invited to join the 7 Presidents Lifeguard Scheduling System.\n\nClick the link below to set up your account (valid for 7 days):\n${inviteUrl}\n\nAlready set up your account? Log in here:\nhttps://baconlt.github.io/7p-sts/\n\nIf you weren't expecting this, you can safely ignore this email.\n\n— 7 Presidents STS`;
+
+  try {
+    MailApp.sendEmail({ to: guard.email, subject: "You're invited to 7 Presidents STS", htmlBody, body });
+  } catch(e) {
+    Logger.log('Invite email error: ' + e.message);
+    return { success: false, message: 'Guard updated but email failed: ' + e.message };
+  }
+  return { success: true, email: guard.email };
+}
+
+function acceptInvite(inviteToken, newPassword) {
+  if (!inviteToken) return { success: false, message: 'Missing invite token.' };
+  if (!newPassword || newPassword.length < 6) return { success: false, message: 'Password must be at least 6 characters.' };
+
+  const all = sheetToObjects(SHEETS.GUARDS);
+  const guard = all.find(g => String(g.invite_token) === String(inviteToken).trim());
+  if (!guard) return { success: false, message: 'Invalid or already-used invite link.' };
+  if (guard.status === 'inactive') return { success: false, message: 'This account has been deactivated.' };
+  if (new Date(guard.invite_token_expires) < new Date()) {
+    return { success: false, message: 'This invite link has expired. Ask your admin to send a new invitation.' };
+  }
+
+  const { hash } = hashPassword(newPassword);
+  updateById(SHEETS.GUARDS, {
+    id: guard.id,
+    password_hash: hash,
+    auth_type: 'password',
+    temp_password: '',
+    must_change_pw: 'false',
+    invite_token: '',
+    invite_token_expires: ''
+  });
+
+  const freshGuard = findGuardById(guard.id);
+  const sessionToken = createSession(freshGuard);
+  return { success: true, token: sessionToken, guard: sanitizeGuard(freshGuard), role: roleFor(freshGuard.rank) };
 }
 
 function resetPasswordWithToken(code, newPassword) {
@@ -263,12 +461,39 @@ function resetPasswordWithToken(code, newPassword) {
 
   const { hash } = hashPassword(newPassword);
   updateById(SHEETS.GUARDS, { id: guard.id, password_hash: hash, temp_password: '', must_change_pw: 'false', reset_token: '', reset_token_expires: '' });
+
+  const appUrl = 'https://baconlt.github.io/7p-sts/';
+  try {
+    MailApp.sendEmail({
+      to: guard.email,
+      subject: '[7 Presidents STS] Your password has been reset',
+      htmlBody: `<div style="font-family:Arial,sans-serif;max-width:540px;margin:0 auto">
+  <div style="background:#0d2137;padding:20px 24px;border-radius:8px 8px 0 0">
+    <div style="font-size:1.3rem;font-weight:800;color:#fff;letter-spacing:1px">7 Presidents STS</div>
+    <div style="color:#57a0d3;font-size:.8rem;letter-spacing:2px;text-transform:uppercase;margin-top:3px">Lifeguard Scheduling System</div>
+  </div>
+  <div style="background:#fff;padding:28px 24px;border:1px solid #d0e4ef;border-top:none">
+    <p style="font-size:1rem;margin-bottom:12px">Hi ${guard.name},</p>
+    <p style="margin-bottom:18px">Your password for the 7 Presidents Lifeguard Scheduling System has been successfully reset. You can now log in with your new password.</p>
+    <div style="text-align:center;margin:24px 0">
+      <a href="${appUrl}" style="background:#0d2137;color:#fff;text-decoration:none;padding:14px 28px;border-radius:8px;font-weight:700;font-size:1rem;display:inline-block;letter-spacing:.5px">Go to App →</a>
+      <p style="margin-top:10px;font-size:.82rem;color:#6b8a9a">or <a href="${appUrl}" style="color:#2176ae">login here</a></p>
+    </div>
+    <hr style="border:none;border-top:1px solid #d0e4ef;margin:18px 0">
+    <p style="color:#6b8a9a;font-size:.78rem">If you did not reset your password, please contact your supervisor immediately.</p>
+    <p style="color:#6b8a9a;font-size:.78rem;margin-top:8px">— 7 Presidents STS</p>
+  </div>
+</div>`,
+      body: `Hi ${guard.name},\n\nYour password for the 7 Presidents Lifeguard Scheduling System has been successfully reset.\n\nYou can now log in with your new password at:\n${appUrl}\n\nIf you did not reset your password, please contact your supervisor immediately.\n\n— 7 Presidents STS`
+    });
+  } catch(e) { Logger.log('Password reset confirmation email error: ' + e.message); }
+
   return { success: true };
 }
 
 function sanitizeGuard(g) {
   // Never send password fields to client
-  const { password_hash, temp_password, reset_token, reset_token_expires, ...safe } = g;
+  const { password_hash, temp_password, reset_token, reset_token_expires, invite_token, invite_token_expires, ...safe } = g;
   return safe;
 }
 
@@ -300,9 +525,16 @@ function sheetToObjects(name) {
 function serializeCell(val) {
   if (val instanceof Date) {
     const y = val.getFullYear();
-    const m = String(val.getMonth() + 1).padStart(2, '0');
+    // Year ≤ 1900 = time-only cell (Sheets internal representation)
+    if (y <= 1900) {
+      let h = val.getHours(), m = val.getMinutes();
+      const ap = h >= 12 ? 'PM' : 'AM';
+      h = h % 12 || 12;
+      return h + ':' + (m < 10 ? '0' : '') + m + ' ' + ap;
+    }
+    const mo = String(val.getMonth() + 1).padStart(2, '0');
     const d = String(val.getDate()).padStart(2, '0');
-    return `${y}-${m}-${d}`;
+    return `${y}-${mo}-${d}`;
   }
   return (val === null || val === undefined) ? '' : val;
 }
@@ -377,7 +609,8 @@ function createGuard(d) {
   const id = uid('G');
   appendRow(SHEETS.GUARDS, { id, name: d.name, email: d.email, phone: d.phone||'', rank: d.rank,
     pay_rate: d.pay_rate||0, post_eligibility: d.post_eligibility||'', status:'active',
-    auth_type: d.auth_type||'google', temp_password: d.temp_password||'', created_at: new Date().toISOString() });
+    auth_type: d.auth_type||'google', temp_password: d.temp_password||'',
+    locker_number: d.locker_number||'', parking_pass: d.parking_pass||'', created_at: new Date().toISOString() });
   return { success: true, id };
 }
 function updateGuard(d) { return updateById(SHEETS.GUARDS, d); }
@@ -430,6 +663,14 @@ function lockPeriod(id) { return updateById(SHEETS.PERIODS, { id, locked:'true' 
 // ── SHIFTS ───────────────────────────────────────────────────
 
 function getShiftsForPeriod(periodId) {
+  const period = periodById(periodId);
+  if (period && period.start_date && period.schedule_thru) {
+    const start = toYMD(period.start_date), end = toYMD(period.schedule_thru);
+    return sheetToObjects(SHEETS.SHIFTS).filter(s => {
+      const d = toYMD(s.date);
+      return d >= start && d <= end;
+    });
+  }
   return sheetToObjects(SHEETS.SHIFTS).filter(s => s.pay_period_id === periodId);
 }
 function getShiftsForGuard(guardId) {
@@ -473,7 +714,8 @@ function assignShift(d) {
     !s.assigned_guard_id
   );
   if (open) {
-    updateById(SHEETS.SHIFTS, { id:open.id, assigned_guard_id:d.assigned_guard_id, status:'filled' });
+    updateById(SHEETS.SHIFTS, { id:open.id, assigned_guard_id:d.assigned_guard_id, status:'filled',
+      custom_start:d.custom_start||'', custom_end:d.custom_end||'' });
     return { success:true, id:open.id, created:false };
   }
   // No open slot — create new (caller confirmed overstaffing)
@@ -481,7 +723,8 @@ function assignShift(d) {
   appendRow(SHEETS.SHIFTS, { id, pay_period_id:d.pay_period_id, date:d.date,
     post_id:d.post_id, template_code:d.template_code, type:'assigned',
     assigned_guard_id:d.assigned_guard_id, status:'filled',
-    notes:d.notes||'', created_at:new Date().toISOString(), series_id:'' });
+    notes:d.notes||'', created_at:new Date().toISOString(), series_id:'',
+    custom_start:d.custom_start||'', custom_end:d.custom_end||'' });
   return { success:true, id, created:true };
 }
 
@@ -518,32 +761,80 @@ function deleteShiftSeries(seriesId, fromDate, scope) {
   return { success:true, count };
 }
 
+function getNthWeekday(year, month, nth, wday) {
+  // month is 0-indexed; nth=-1 means last occurrence
+  if (nth === -1) {
+    const dt = new Date(year, month+1, 0, 12); // last day of month
+    while (dt.getDay() !== wday) dt.setDate(dt.getDate()-1);
+    return dt;
+  }
+  const first = new Date(year, month, 1);
+  const diff = (wday - first.getDay() + 7) % 7;
+  const dayNum = 1 + diff + (nth-1)*7;
+  if (dayNum > new Date(year, month+1, 0).getDate()) return null; // e.g. 5th Friday may not exist
+  return new Date(year, month, dayNum, 12);
+}
+
 function recurringShifts(d, seriesId, qty) {
   qty = parseInt(qty)||1;
   const freq = d.recur_freq || 'weekly';
   const [y,m,day] = d.date.split('-').map(Number);
-  let cur = new Date(y, m-1, day, 12);
+  const startDate = new Date(y, m-1, day, 12);
   const [ey,em,ed] = d.recur_through.split('-').map(Number);
   const end = new Date(ey, em-1, ed, 12);
-  // Advance by frequency
-  function advance(dt) {
-    const n = new Date(dt);
-    if (freq==='daily')        n.setDate(n.getDate()+1);
-    else if (freq==='weekly')  n.setDate(n.getDate()+7);
-    else if (freq==='monthly') n.setMonth(n.getMonth()+1);
-    return n;
-  }
-  cur = advance(cur);
-  while (cur <= end) {
-    for (let i=0; i<qty; i++) {
-      const id = uid('S');
-      appendRow(SHEETS.SHIFTS, { id, pay_period_id:d.pay_period_id, date:serializeCell(cur),
-        post_id:d.post_id, template_code:d.template_code, type:'recurring',
-        assigned_guard_id:'', status:'open',
-        notes:d.notes||'', created_at:new Date().toISOString(), series_id:seriesId });
+
+  const dates = [];
+
+  if (freq === 'daily') {
+    const cur = new Date(startDate);
+    cur.setDate(cur.getDate()+1);
+    while (cur <= end) { dates.push(new Date(cur)); cur.setDate(cur.getDate()+1); }
+
+  } else if (freq === 'weekly') {
+    const recurDays = (d.recur_days && d.recur_days.length)
+      ? d.recur_days.map(Number)
+      : [startDate.getDay()];
+    const cur = new Date(startDate);
+    cur.setDate(cur.getDate()+1);
+    while (cur <= end) {
+      if (recurDays.indexOf(cur.getDay()) >= 0) dates.push(new Date(cur));
+      cur.setDate(cur.getDate()+1);
     }
-    cur = advance(cur);
+
+  } else if (freq === 'monthly') {
+    const mode = d.recur_month_mode || 'date';
+    if (mode === 'weekday') {
+      const nth = parseInt(d.recur_nth)||1;
+      const wday = parseInt(d.recur_wday)||0;
+      let mn = m, yr = y;
+      mn++; if (mn > 12) { mn = 1; yr++; }
+      while (yr < ey || (yr === ey && mn <= em)) {
+        const dt = getNthWeekday(yr, mn-1, nth, wday);
+        if (dt && dt > startDate && dt <= end) dates.push(dt);
+        mn++; if (mn > 12) { mn = 1; yr++; }
+      }
+    } else {
+      const dayOfMonth = parseInt(d.recur_month_day)||day;
+      let mn = m, yr = y;
+      mn++; if (mn > 12) { mn = 1; yr++; }
+      while (yr < ey || (yr === ey && mn <= em)) {
+        const maxDay = new Date(yr, mn, 0).getDate();
+        const dt = new Date(yr, mn-1, Math.min(dayOfMonth, maxDay), 12);
+        if (dt > startDate && dt <= end) dates.push(dt);
+        mn++; if (mn > 12) { mn = 1; yr++; }
+      }
+    }
   }
+
+  dates.forEach(function(dt) {
+    for (var i=0; i<qty; i++) {
+      var id = uid('S');
+      appendRow(SHEETS.SHIFTS, { id: id, pay_period_id: d.pay_period_id, date: serializeCell(dt),
+        post_id: d.post_id, template_code: d.template_code, type: 'recurring',
+        assigned_guard_id: '', status: 'open',
+        notes: d.notes||'', created_at: new Date().toISOString(), series_id: seriesId });
+    }
+  });
 }
 function updateShift(d) { return updateById(SHEETS.SHIFTS, d); }
 function cancelShift(id) { return updateById(SHEETS.SHIFTS, { id, status:'cancelled' }); }
@@ -565,6 +856,7 @@ function getAvailabilityForGuard(guardId) {
 function submitAvailability(token, entries) {
   const session = getSessionFromToken(token);
   if (!session) return { success: false, message: 'Not authenticated.' };
+
   const existing = sheetToObjects(SHEETS.AVAILABILITY);
   for (const e of entries) {
     if (session.role === 'guard' && e.guard_id !== session.guard.id) continue;
@@ -581,10 +873,10 @@ function submitAvailability(token, entries) {
     const ex = existing.find(x => x.guard_id === e.guard_id && toYMD(x.date) === toYMD(e.date));
     if (ex) {
       updateById(SHEETS.AVAILABILITY, { id: ex.id, status: e.status,
-        custom_start: e.custom_start||'', custom_end: e.custom_end||'', ot_willing: e.ot_willing||false });
+        custom_start: e.custom_start||'', custom_end: e.custom_end||'', ot_willing: e.ot_willing||false, notes: e.notes||'' });
     } else {
       appendRow(SHEETS.AVAILABILITY, { id: uid('AV'), guard_id: e.guard_id, date: e.date, status: e.status,
-        custom_start: e.custom_start||'', custom_end: e.custom_end||'', ot_willing: e.ot_willing||false,
+        custom_start: e.custom_start||'', custom_end: e.custom_end||'', ot_willing: e.ot_willing||false, notes: e.notes||'',
         submitted_at: new Date().toISOString() });
     }
   }
@@ -808,11 +1100,11 @@ function publishSchedule(periodId) {
 function setupSpreadsheet() {
   const ss = SS();
   const schemas = {
-    Guards:        ['id','name','email','phone','rank','pay_rate','post_eligibility','status','auth_type','password_hash','temp_password','must_change_pw','reset_token','reset_token_expires','created_at'],
+    Guards:        ['id','name','email','phone','rank','pay_rate','post_eligibility','status','auth_type','password_hash','temp_password','must_change_pw','reset_token','reset_token_expires','invite_token','invite_token_expires','locker_number','parking_pass','created_at'],
     Posts:         ['id','name','rank_eligibility','active','color','sort_order'],
     ShiftTemplates:['code','name','start_time','end_time','paid_hours','break_minutes'],
-    Shifts:        ['id','pay_period_id','date','post_id','template_code','type','assigned_guard_id','status','notes','created_at','series_id'],
-    Availability:  ['id','guard_id','date','status','custom_start','custom_end','ot_willing','submitted_at'],
+    Shifts:        ['id','pay_period_id','date','post_id','template_code','type','assigned_guard_id','status','notes','created_at','series_id','custom_start','custom_end'],
+    Availability:  ['id','guard_id','date','status','custom_start','custom_end','ot_willing','notes','submitted_at'],
     ShiftRequests: ['id','guard_id','shift_id','requested_at','status','admin_notes'],
     SwapRequests:  ['id','requestor_id','target_id','shift_id','status','admin_notes','target_response','created_at'],
     PayPeriods:    ['id','start_date','end_date','schedule_thru','locked','payroll_due','availability_deadline','time_report_due'],
@@ -820,9 +1112,10 @@ function setupSpreadsheet() {
     Notifications: ['id','guard_id','type','message','sent_at','channel'],
     TimeRecords:   ['id','guard_id','guard_name','shift_id','date','clock_in','clock_out','break_minutes',
                     'total_minutes','status','edited','edited_by','edited_at','locked',
-                    'clock_in_lat','clock_in_lng','clock_in_dist_ft',
-                    'clock_out_lat','clock_out_lng','clock_out_dist_ft',
+                    'clock_in_lat','clock_in_lng','clock_in_dist_ft','clock_in_location',
+                    'clock_out_lat','clock_out_lng','clock_out_dist_ft','clock_out_location',
                     'auto_clocked_out','notes','created_at'],
+    Locations:     ['id','name','polygon','active','notes'],
     ShiftStats:    ['id','guard_id','guard_name','time_record_id','shift_id','date','submitted_at',
                     'beach_location',
                     'preventive_actions','bather_assists','rfd_rescues','rfd_line_rescues',
@@ -848,9 +1141,10 @@ function setupSpreadsheet() {
       ['LS8', 'Late Shift 8hr', '10:45 AM','7:15 PM', 8,  30],
       ['LSO', 'Late Shift Only','5:15 PM', '7:15 PM', 2,  0 ],
       ['LS10','Late Shift 10hr','8:45 AM', '7:15 PM', 10, 30],
-      ['SPEC','Special',        'TBD',     'TBD',     0,  0 ],
-      ['ATH', 'Athlete Custom', 'Custom',  'Custom',  0,  0 ],
-      ['MISC','Other',          'Custom',  'Custom',  0,  0 ],
+      ['SPEC', 'Special',    'TBD',     'TBD',     0,   0 ],
+      ['TOURN','Tournament', '6:00 PM', '8:30 PM', 2.5, 0 ],
+      ['ATH',  'Athlete Custom', 'Custom', 'Custom', 0, 0 ],
+      ['MISC', 'Other',     'Custom',  'Custom',  0,   0 ],
     ]);
   }
   const cfg = ss.getSheetByName('Config');
@@ -1017,6 +1311,60 @@ function exportShiftStatsCSV(token, periodId) {
   return { success: true, csv, period: period ? `${period.start_date}_${period.end_date}` : 'all' };
 }
 
+function getAdminStatsData(token, date) {
+  requireAdmin(token);
+  const today = toYMD(new Date());
+  const queryDate = date || today;
+
+  const allStats = sheetToObjects(SHEETS.SHIFT_STATS);
+  const statsForDate = allStats.filter(s => toYMD(s.date) === queryDate);
+
+  const submittedTRIds = new Set(allStats.map(s => s.time_record_id).filter(Boolean));
+  const allTimeRecords = sheetToObjects(SHEETS.TIME_RECORDS);
+
+  const dateCompleteRecords = allTimeRecords.filter(r =>
+    r.status === 'complete' && toYMD(r.date) === queryDate
+  );
+  const missingToday = dateCompleteRecords
+    .filter(r => !submittedTRIds.has(r.id))
+    .map(r => ({
+      guard_id:       r.guard_id,
+      guard_name:     r.guard_name || r.guard_id,
+      time_record_id: r.id,
+      clock_out:      r.clock_out ? new Date(r.clock_out).toISOString() : '',
+      date:           toYMD(r.date)
+    }));
+
+  const latestByGuard = {};
+  allTimeRecords.filter(r => r.status === 'complete').forEach(r => {
+    const gid = String(r.guard_id);
+    const co = r.clock_out ? new Date(r.clock_out).getTime() : 0;
+    if (!latestByGuard[gid] || co > latestByGuard[gid]._t) {
+      latestByGuard[gid] = { ...r, _t: co };
+    }
+  });
+  const missingLastShift = Object.values(latestByGuard)
+    .filter(r => !submittedTRIds.has(r.id))
+    .map(r => {
+      const guard = findGuardById(r.guard_id);
+      return {
+        guard_id:       r.guard_id,
+        guard_name:     guard ? guard.name : (r.guard_name || r.guard_id),
+        time_record_id: r.id,
+        clock_out:      r.clock_out ? new Date(r.clock_out).toISOString() : '',
+        date:           toYMD(r.date)
+      };
+    });
+
+  return {
+    date:           queryDate,
+    today,
+    statsForDate,
+    missingToday,
+    missingLastShift
+  };
+}
+
 function clientSubmitShiftStats(token, d)          { return submitShiftStats(token, d); }
 function clientGetMyShiftStats(token, periodId)    { return getMyShiftStats(token, periodId); }
 function clientGetPendingStatsAlerts(token)        { return getPendingStatsAlerts(token); }
@@ -1038,6 +1386,7 @@ function clientGetActiveClockins(token) {
 }
 function clientGetAllShiftStats(token, periodId)   { return getAllShiftStats(token, periodId); }
 function clientExportShiftStatsCSV(token, periodId){ return exportShiftStatsCSV(token, periodId); }
+function clientGetAdminStatsData(token, date)      { return getAdminStatsData(token, date); }
 function clientGetGuards()                 { return getAllGuards(); }
 function clientGetPosts()                  { return getAllPosts(); }
 function clientGetTemplates()              { return getAllTemplates(); }
@@ -1177,6 +1526,8 @@ function clientRespondSwap(sid,accept)    { return respondSwap(sid,accept); }
 function clientApproveSwap(sid)           { return approveSwap(sid); }
 function clientDenySwap(sid,reason)       { return denySwap(sid,reason); }
 function clientSetConfig(token,k,v)        { requireAdmin(token); return setConfig(k,v); }
+function clientSendInvite(token,guardId)   { try { return sendInvite(token,guardId); } catch(e) { return { success:false, message:e.message }; } }
+function clientAcceptInvite(tok,pw)        { try { return acceptInvite(tok,pw); } catch(e) { return { success:false, message:e.message }; } }
 // clientLoginWithPassword defined above
 
 // ── TIME TRACKING ─────────────────────────────────────────────
@@ -1228,6 +1579,69 @@ function distanceFeet(lat1, lng1, lat2, lng2) {
   return Math.round(R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a)));
 }
 
+// ── GEOFENCE HELPERS ─────────────────────────────────────────
+
+function pointInPolygon(lat, lng, polygonJson) {
+  let poly;
+  try { poly = JSON.parse(polygonJson); } catch(e) { return false; }
+  if (!Array.isArray(poly) || poly.length < 3) return false;
+  let inside = false;
+  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+    const xi = poly[i][0], yi = poly[i][1];
+    const xj = poly[j][0], yj = poly[j][1];
+    const intersect = ((yi > lng) !== (yj > lng)) &&
+      (lat < (xj - xi) * (lng - yi) / (yj - yi) + xi);
+    if (intersect) inside = !inside;
+  }
+  return inside;
+}
+
+function resolveLocation(lat, lng) {
+  if (!lat || !lng) return '';
+  const locs = sheetToObjects(SHEETS.LOCATIONS).filter(l => l.active !== 'false');
+  for (const loc of locs) {
+    if (pointInPolygon(parseFloat(lat), parseFloat(lng), loc.polygon)) return loc.name;
+  }
+  return '';
+}
+
+// Locations CRUD
+function getLocations() {
+  return sheetToObjects(SHEETS.LOCATIONS);
+}
+
+function createLocation(d) {
+  const id = uid('LOC');
+  appendRow(SHEETS.LOCATIONS, {
+    id, name: d.name, polygon: d.polygon, active: 'true', notes: d.notes || ''
+  });
+  return { success: true, id };
+}
+
+function updateLocation(d) {
+  const updates = { id: d.id };
+  if (d.name    !== undefined) updates.name    = d.name;
+  if (d.polygon !== undefined) updates.polygon = d.polygon;
+  if (d.active  !== undefined) updates.active  = d.active;
+  if (d.notes   !== undefined) updates.notes   = d.notes;
+  updateById(SHEETS.LOCATIONS, updates);
+  return { success: true };
+}
+
+function deleteLocation(id) {
+  const sheet = SH(SHEETS.LOCATIONS);
+  const data  = sheet.getDataRange().getValues();
+  for (let i = data.length - 1; i >= 1; i--) {
+    if (String(data[i][0]) === String(id)) { sheet.deleteRow(i + 1); break; }
+  }
+  return { success: true };
+}
+
+function clientGetLocations(token)         { requireAdmin(token); return getLocations(); }
+function clientCreateLocation(token, d)    { requireAdmin(token); return createLocation(d); }
+function clientUpdateLocation(token, d)    { requireAdmin(token); return updateLocation(d); }
+function clientDeleteLocation(token, id)   { requireAdmin(token); return deleteLocation(id); }
+
 // Clock in
 function clockIn(d) {
   const session = getSessionFromToken(d.token);
@@ -1262,33 +1676,36 @@ function clockIn(d) {
   const hqLng = parseFloat(ttConfig('hq_lng', '-74.0060'));
 
   const distFt = d.lat && d.lng ? distanceFeet(d.lat, d.lng, hqLat, hqLng) : null;
+  const inLocation = d.lat && d.lng ? resolveLocation(d.lat, d.lng) : '';
 
   const now = new Date();
   const id = uid('TR');
   appendRow(SHEETS.TIME_RECORDS, {
     id,
-    guard_id:        guardId,
-    guard_name:      guard.name || '',
-    shift_id:        shift ? shift.id : '',
-    date:            today,
-    clock_in:        now.toISOString(),
-    clock_out:       '',
-    break_minutes:   '',
-    total_minutes:   '',
-    status:          'open',
-    edited:          'false',
-    edited_by:       '',
-    edited_at:       '',
-    locked:          'false',
-    clock_in_lat:    d.lat || '',
-    clock_in_lng:    d.lng || '',
-    clock_in_dist_ft: distFt !== null ? distFt : '',
-    clock_out_lat:   '',
-    clock_out_lng:   '',
+    guard_id:          guardId,
+    guard_name:        guard.name || '',
+    shift_id:          shift ? shift.id : '',
+    date:              today,
+    clock_in:          now.toISOString(),
+    clock_out:         '',
+    break_minutes:     '',
+    total_minutes:     '',
+    status:            'open',
+    edited:            'false',
+    edited_by:         '',
+    edited_at:         '',
+    locked:            'false',
+    clock_in_lat:      d.lat || '',
+    clock_in_lng:      d.lng || '',
+    clock_in_dist_ft:  distFt !== null ? distFt : '',
+    clock_in_location: inLocation,
+    clock_out_lat:     '',
+    clock_out_lng:     '',
     clock_out_dist_ft: '',
-    auto_clocked_out: 'false',
-    notes:           d.notes || '',
-    created_at:      now.toISOString()
+    clock_out_location:'',
+    auto_clocked_out:  'false',
+    notes:             d.notes || '',
+    created_at:        now.toISOString()
   });
 
   return { success: true, id, clock_in: now.toISOString(), shift_id: shift ? shift.id : '' };
@@ -1331,6 +1748,7 @@ function clockOut(d) {
   const hqLat = parseFloat(ttConfig('hq_lat', '40.2171'));
   const hqLng = parseFloat(ttConfig('hq_lng', '-74.0060'));
   const distFt = d.lat && d.lng ? distanceFeet(d.lat, d.lng, hqLat, hqLng) : null;
+  const outLocation = d.lat && d.lng ? resolveLocation(d.lat, d.lng) : '';
 
   // Calculate total minutes
   const rawMinutes = Math.round((clockOutTime - clockIn) / 60000);
@@ -1353,13 +1771,19 @@ function clockOut(d) {
     edited:           isEdited ? 'true' : 'false',
     edited_by:        isEdited ? guardId : '',
     edited_at:        isEdited ? now.toISOString() : '',
-    clock_out_lat:    d.lat || '',
-    clock_out_lng:    d.lng || '',
-    clock_out_dist_ft: distFt !== null ? distFt : '',
-    notes:            d.notes || record.notes || ''
+    clock_out_lat:      d.lat || '',
+    clock_out_lng:      d.lng || '',
+    clock_out_dist_ft:  distFt !== null ? distFt : '',
+    clock_out_location: outLocation,
+    notes:              d.notes || record.notes || ''
   });
 
-  return { success: true, total_minutes: totalMinutes, break_minutes: breakMins };
+  // Compute rounded_minutes: round each timestamp to nearest 15, then diff
+  const cinRnd = new Date(clockIn); cinRnd.setMinutes(Math.round(cinRnd.getMinutes()/15)*15, 0, 0);
+  const coutRnd = new Date(clockOutTime); coutRnd.setMinutes(Math.round(coutRnd.getMinutes()/15)*15, 0, 0);
+  const roundedMinutes = Math.max(0, Math.round((coutRnd - cinRnd)/60000) - breakMins);
+
+  return { success: true, total_minutes: totalMinutes, break_minutes: breakMins, rounded_minutes: roundedMinutes };
 }
 
 // Admin: edit a time record
@@ -1473,6 +1897,13 @@ function getClockStatus(guardId) {
     : { clocked_in: false };
 }
 
+function getAllClockedIn() {
+  const today = toYMD(new Date());
+  return sheetToObjects(SHEETS.TIME_RECORDS).filter(r =>
+    toYMD(r.date) === today && r.status === 'open'
+  );
+}
+
 // Get time records summary for a guard in a period (for reporting)
 function getTimeReportForGuard(guardId, periodId) {
   const records = getTimeRecordsForGuard(guardId, periodId);
@@ -1490,32 +1921,103 @@ function exportTimeRecordsCSV(periodId) {
   requireAdmin();
   const period = periodById(periodId);
   if (!period) return { success: false, message: 'Period not found.' };
-  const records = getTimeRecordsForPeriod(periodId);
-  const guards  = getAllGuards();
+
+  const records   = getTimeRecordsForPeriod(periodId);
+  const guards    = getAllGuards();
+  const today     = toYMD(new Date());
+
+  const allShifts = getShiftsForPeriod(periodId);
+  const templates = sheetToObjects(SHEETS.TEMPLATES);
+  const tmplMap   = {};
+  templates.forEach(t => { tmplMap[t.code] = t; });
+
+  // Helper: get projected minutes for a shift
+  function projectedMins(shift) {
+    const tmpl = shift ? tmplMap[shift.template_code] : null;
+    return tmpl ? Math.round((parseFloat(tmpl.paid_hours) || 0) * 60) : 0;
+  }
+  function projectedBreak(shift) {
+    const tmpl = shift ? tmplMap[shift.template_code] : null;
+    return tmpl ? parseInt(tmpl.break_minutes) || 0 : 0;
+  }
 
   const rows = [['Guard','Rank','Date','Clock In','Clock Out','Break (min)',
                  'Raw Hours','Rounded Hours','Edited','Locked','Notes']];
 
+  // Track which guard+date combos already have a time record
+  const recordSet = new Set(records.map(r => `${r.guard_id}|${toYMD(r.date)}`));
+
   records.forEach(r => {
-    const g = guards.find(x => String(x.id) === String(r.guard_id));
-    const cin  = r.clock_in  ? new Date(r.clock_in)  : null;
-    const cout = r.clock_out ? new Date(r.clock_out) : null;
-    const rawMins = parseInt(r.total_minutes) || 0;
-    const roundedMins = roundToQuarter(rawMins);
+    const g        = guards.find(x => String(x.id) === String(r.guard_id));
+    const cin      = r.clock_in  ? new Date(r.clock_in)  : null;
+    const cout     = r.clock_out ? new Date(r.clock_out) : null;
+    const recDate  = toYMD(r.date);
+    const isOpen   = cin && !cout;
+
+    let rawMins, roundedMins, clockOutStr, breakMins, notesStr;
+
+    if (isOpen) {
+      // Clocked in but not yet out — use scheduled shift hours as projection
+      const shift = allShifts.find(s =>
+        (r.shift_id && s.id === r.shift_id) ||
+        (String(s.assigned_guard_id) === String(r.guard_id) && toYMD(s.date) === recDate)
+      );
+      rawMins     = projectedMins(shift);
+      roundedMins = roundToQuarter(rawMins);
+      clockOutStr = 'Open';
+      breakMins   = projectedBreak(shift) || parseInt(r.break_minutes) || 0;
+      notesStr    = 'projected hours';
+    } else {
+      rawMins     = parseInt(r.total_minutes) || 0;
+      roundedMins = roundToQuarter(rawMins);
+      clockOutStr = cout ? Utilities.formatDate(cout, Session.getScriptTimeZone(), 'h:mm a') : 'Open';
+      breakMins   = parseInt(r.break_minutes) || 0;
+      notesStr    = r.notes || '';
+    }
+
     rows.push([
       g ? g.name : r.guard_id,
       g ? g.rank : '',
-      r.date,
-      cin  ? Utilities.formatDate(cin,  Session.getScriptTimeZone(), 'h:mm a') : '',
-      cout ? Utilities.formatDate(cout, Session.getScriptTimeZone(), 'h:mm a') : 'Open',
-      r.break_minutes || 0,
+      recDate,
+      cin ? Utilities.formatDate(cin, Session.getScriptTimeZone(), 'h:mm a') : '',
+      clockOutStr,
+      breakMins,
       (rawMins / 60).toFixed(2),
       (roundedMins / 60).toFixed(2),
       r.edited === 'true' ? 'Yes' : '',
       r.locked === 'true' ? 'Yes' : '',
-      r.notes || ''
+      notesStr
     ]);
   });
+
+  // Add projected rows for future assigned shifts with no time record yet
+  allShifts
+    .filter(s => {
+      const d = toYMD(s.date);
+      return s.assigned_guard_id &&
+             s.status === 'filled' &&
+             d > today &&
+             !recordSet.has(`${s.assigned_guard_id}|${d}`);
+    })
+    .sort((a, b) => toYMD(a.date).localeCompare(toYMD(b.date)))
+    .forEach(s => {
+      const g         = guards.find(x => String(x.id) === String(s.assigned_guard_id));
+      const rawMins   = projectedMins(s);
+      const breakMins = projectedBreak(s);
+      rows.push([
+        g ? g.name : s.assigned_guard_id,
+        g ? g.rank : '',
+        toYMD(s.date),
+        '',
+        '',
+        breakMins,
+        (rawMins / 60).toFixed(2),
+        (roundToQuarter(rawMins) / 60).toFixed(2),
+        '',
+        '',
+        'projected hours'
+      ]);
+    });
 
   return { success: true, csv: rows.map(r => r.map(c => `"${String(c).replace(/"/g,'""')}"`).join(',')).join('\n'),
            period: `${period.start_date}_${period.end_date}` };
@@ -1529,6 +2031,22 @@ function clientGetClockStatusFor(token,guardId)   {
   // Admin-only: get clock status for any guard
   requireAdmin();
   return getClockStatus(guardId);
+}
+function clientGetAllClockedIn(token)             { requireAdmin(token); return getAllClockedIn(); }
+function clientGetClockedOutToday(token) {
+  requireAdmin(token);
+  const today = toYMD(new Date());
+  return sheetToObjects(SHEETS.TIME_RECORDS)
+    .filter(r => toYMD(r.date) === today && r.status === 'complete')
+    .sort((a, b) => new Date(b.clock_out) - new Date(a.clock_out));
+}
+function clientGetClockedOutYesterday(token) {
+  requireAdmin(token);
+  const d = new Date(); d.setDate(d.getDate() - 1);
+  const yesterday = toYMD(d);
+  return sheetToObjects(SHEETS.TIME_RECORDS)
+    .filter(r => toYMD(r.date) === yesterday && r.status === 'complete')
+    .sort((a, b) => new Date(b.clock_out) - new Date(a.clock_out));
 }
 function clientGetTimeRecords(token,periodId)      { requireAdmin(token); return getTimeRecordsForPeriod(periodId); }
 function clientGetMyTimeRecords(token, periodId, targetGuardId) {
@@ -1575,6 +2093,29 @@ function clientGuardEditTimeRecord(token, d) {
     notes:         d.notes || record.notes || ''
   });
   return { success: true, total_minutes: totalMinutes };
+}
+function clientGuardDeleteTimeRecord(token, recordId) {
+  const session = getSessionFromToken(token);
+  if (!session) return { success: false, message: 'Not authenticated.' };
+  const guardId = String(session.guard.id);
+  const sheet = SH(SHEETS.TIME_RECORDS);
+  if (!sheet) return { success: false, message: 'Sheet not found.' };
+  const data = sheet.getDataRange().getValues();
+  const headers = data[0].map(h => String(h).trim());
+  const idCol = headers.indexOf('id');
+  const guardCol = headers.indexOf('guard_id');
+  const lockedCol = headers.indexOf('locked');
+  const statusCol = headers.indexOf('status');
+  for (let i = 1; i < data.length; i++) {
+    if (String(data[i][idCol]) === String(recordId)) {
+      if (String(data[i][guardCol]) !== guardId) return { success: false, message: 'Not your record.' };
+      if (String(data[i][lockedCol]) === 'true') return { success: false, message: 'Record is locked by admin.' };
+      if (String(data[i][statusCol]) === 'open') return { success: false, message: 'Cannot delete an open record — clock out first.' };
+      sheet.deleteRow(i + 1);
+      return { success: true };
+    }
+  }
+  return { success: false, message: 'Record not found.' };
 }
 function clientEditTimeRecord(token,d)             { requireAdmin(token); return editTimeRecord(d); }
 function clientAddManualTimeRecord(token,d) {
@@ -1635,4 +2176,134 @@ function clientAddManualTimeRecord(token,d) {
 function clientLockTimeRecord(token,id,lock)       { requireAdmin(token); return lockTimeRecord(id,lock); }
 function clientLockPeriodTimeRecords(token,periodId) { requireAdmin(token); return lockPeriodTimeRecords(periodId); }
 function clientExportTimeRecordsCSV(token,periodId) { requireAdmin(token); return exportTimeRecordsCSV(periodId); }
+function clientExportPayrollUpdateCSV(token,periodId) { requireAdmin(token); return exportPayrollUpdateCSV(periodId); }
 function clientAutoClockOutCheck()                { return autoClockOutCheck(); }
+
+// Export payroll update report: changes on/after payroll_due date.
+// Covers (1) tail days where actual ≠ scheduled, (2) no-shows on tail days,
+// (3) any record edited on/after payroll_due.
+function exportPayrollUpdateCSV(periodId) {
+  const period = periodById(periodId);
+  if (!period) return { success: false, message: 'Period not found.' };
+
+  const payrollDue = toYMD(period.payroll_due);
+  if (!payrollDue) return { success: false, message: 'No payroll due date set for this period.' };
+
+  // One read per sheet — avoid helper functions that each re-read sheets
+  const periodStart = toYMD(period.start_date);
+  const periodEnd   = toYMD(period.schedule_thru) || toYMD(period.end_date);
+
+  const guards    = sheetToObjects(SHEETS.GUARDS).filter(g => g.status !== 'inactive');
+  const templates = sheetToObjects(SHEETS.TEMPLATES);
+  const allShifts = sheetToObjects(SHEETS.SHIFTS).filter(s => {
+    const d = toYMD(s.date); return d >= periodStart && d <= periodEnd;
+  });
+  const records   = sheetToObjects(SHEETS.TIME_RECORDS).filter(r => {
+    const d = toYMD(r.date); return d >= periodStart && d <= periodEnd;
+  });
+
+  // Lookup maps — O(1) access instead of repeated .find()
+  const guardMap   = {};
+  guards.forEach(g => { guardMap[String(g.id)] = g; });
+  const tmplMap    = {};
+  templates.forEach(t => { tmplMap[t.code] = t; });
+  // record lookup: guardId|date → record
+  const recByKey   = {};
+  records.forEach(r => { recByKey[`${r.guard_id}|${toYMD(r.date)}`] = r; });
+  // shift lookup by id
+  const shiftById  = {};
+  allShifts.forEach(s => { shiftById[s.id] = s; });
+
+  const schedMins = shift => {
+    if (!shift) return null;
+    const t = tmplMap[shift.template_code];
+    return t ? Math.round((parseFloat(t.paid_hours) || 0) * 60) : null;
+  };
+
+  // Fast time format from ISO string — avoids Utilities.formatDate overhead
+  const fmtTime = iso => {
+    if (!iso) return '';
+    // iso may be "2026-05-28T13:00:00.000Z" or a locale string
+    const d = new Date(iso);
+    if (isNaN(d)) return String(iso);
+    let h = d.getHours(), m = d.getMinutes();
+    const ap = h >= 12 ? 'PM' : 'AM';
+    h = h % 12 || 12;
+    return h + ':' + (m < 10 ? '0' : '') + m + ' ' + ap;
+  };
+  const hh = mins => (mins / 60).toFixed(2);
+
+  const rows = [['Guard','Rank','Date','Change Type','Scheduled Hrs','Actual Hrs','Difference','Clock In','Clock Out','Edited By','Notes']];
+  const includedRecordIds = new Set();
+
+  // 1. Tail-day shifts (date >= payrollDue)
+  allShifts
+    .filter(s => s.assigned_guard_id && s.status === 'filled' && toYMD(s.date) >= payrollDue)
+    .forEach(shift => {
+      const shiftDate = toYMD(shift.date);
+      const record    = recByKey[`${shift.assigned_guard_id}|${shiftDate}`]
+                     || (shift.id ? records.find(r => r.shift_id === shift.id) : null);
+      const g         = guardMap[String(shift.assigned_guard_id)];
+      const sm        = schedMins(shift);
+      const smH       = sm !== null ? hh(sm) : 'N/A';
+
+      if (!record) {
+        rows.push([g ? g.name : shift.assigned_guard_id, g ? g.rank : '',
+          shiftDate, 'No-show', smH, '0.00', sm !== null ? hh(-sm) : 'N/A', '', '', '', '']);
+        return;
+      }
+
+      includedRecordIds.add(record.id);
+      if (record.status === 'open') return; // still clocked in, hours not final
+
+      const am = roundToQuarter(parseInt(record.total_minutes) || 0);
+      if (sm !== null && am === sm && record.edited !== 'true') return; // no change vs estimate
+
+      const changeType = record.edited === 'true' ? 'Tail day – edited' : 'Tail day – hours differ';
+      rows.push([
+        g ? g.name : record.guard_id, g ? g.rank : '',
+        shiftDate, changeType, smH, hh(am),
+        sm !== null ? hh(am - sm) : 'N/A',
+        fmtTime(record.clock_in), fmtTime(record.clock_out),
+        record.edited === 'true' ? (record.edited_by || 'admin') : '',
+        record.notes || ''
+      ]);
+    });
+
+  // 2. Earlier records edited on/after payrollDue
+  records.forEach(r => {
+    if (includedRecordIds.has(r.id)) return;
+    const recDate = toYMD(r.date);
+    if (recDate >= payrollDue) return;
+    if (r.edited !== 'true') return;
+    const editDate = r.edited_at ? toYMD(r.edited_at) : '';
+    if (!editDate || editDate < payrollDue) return;
+
+    const g     = guardMap[String(r.guard_id)];
+    const shift = (r.shift_id && shiftById[r.shift_id])
+               || allShifts.find(s => String(s.assigned_guard_id) === String(r.guard_id)
+                                   && toYMD(s.date) === recDate && s.status === 'filled');
+    const sm    = schedMins(shift);
+    const am    = roundToQuarter(parseInt(r.total_minutes) || 0);
+    rows.push([
+      g ? g.name : r.guard_id, g ? g.rank : '',
+      recDate, 'Edited after payroll due',
+      sm !== null ? hh(sm) : 'N/A', hh(am),
+      sm !== null ? hh(am - sm) : 'N/A',
+      fmtTime(r.clock_in), fmtTime(r.clock_out),
+      r.edited_by || 'admin', r.notes || ''
+    ]);
+  });
+
+  const header = rows.shift();
+  rows.sort((a, b) => (a[2] < b[2] ? -1 : a[2] > b[2] ? 1 : 0) || (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0));
+  rows.unshift(header);
+
+  return {
+    success: true,
+    csv: rows.map(r => r.map(c => `"${String(c).replace(/"/g,'""')}"`).join(',')).join('\n'),
+    period: `${period.start_date}_${period.end_date}`,
+    payroll_due: payrollDue,
+    row_count: rows.length - 1
+  };
+}

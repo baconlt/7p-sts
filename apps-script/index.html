@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<script>var INVITE_TOKEN='<?= inviteToken ?>';</script>
+<script>var INVITE_TOKEN='<?= inviteToken ?>';var SESSION_TOKEN='<?= sessionToken ?>';</script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <title>7 Presidents STS</title>
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;800&family=Barlow:wght@300;400;500;600&display=swap" rel="stylesheet">
@@ -87,7 +87,7 @@ body{font-family:'Barlow',sans-serif;background:var(--foam);color:var(--text);mi
 .stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:12px;margin-bottom:16px;}
 .stat{background:#fff;border-radius:10px;padding:14px;border:1px solid var(--border);text-align:center;}
 .stat-val{font-family:'Barlow Condensed',sans-serif;font-size:1.9rem;font-weight:800;color:var(--navy);}
-.stat-val.blue{color:var(--wave);} .stat-val.amber{color:var(--sun);} .stat-val.red{color:var(--coral);}
+.stat-val.blue{color:var(--wave);} .stat-val.amber{color:var(--sun);} .stat-val.red{color:var(--coral);} .stat-val.green{color:var(--green);}
 .stat-lbl{font-size:.68rem;color:var(--muted);font-weight:600;text-transform:uppercase;letter-spacing:.5px;margin-top:2px;}
 
 /* ── BUTTONS ── */
@@ -439,6 +439,15 @@ body{font-family:'Barlow',sans-serif;background:var(--foam);color:var(--text);mi
 .tr-edited{font-size:.65rem;color:var(--sun);font-weight:700;}
 .tr-locked{font-size:.65rem;color:var(--muted);}
 .location-note{font-size:.72rem;color:var(--muted);display:flex;align-items:center;gap:4px;margin-top:6px;justify-content:center;}
+.tide-date-btn{background:var(--foam);border:1.5px solid var(--border);border-radius:14px;padding:3px 10px;font-size:.75rem;font-weight:600;color:var(--muted);cursor:pointer;transition:all .15s;}
+.tide-date-btn.on{background:var(--navy);border-color:var(--navy);color:#fff;}
+.tide-row{display:flex;align-items:center;gap:11px;padding:7px 0;}
+.tide-row+.tide-row{border-top:1px solid var(--border);}
+.tide-row-icon{font-size:1.25rem;width:28px;text-align:center;}
+.tide-row-main{flex:1;}
+.tide-row-time{font-weight:700;font-size:.9rem;}
+.tide-row-sub{font-size:.77rem;color:var(--muted);}
+.tide-row-ht{font-family:'Barlow Condensed',sans-serif;font-size:1.05rem;font-weight:700;color:var(--navy);}
 </style>
 </head>
 <body>
@@ -446,7 +455,7 @@ body{font-family:'Barlow',sans-serif;background:var(--foam);color:var(--text);mi
 <div id="splash">
   <div class="splash-sub-wrap">
     <div class="splash-sts">7P STS</div>
-    <div class="splash-tag">Lifeguard Scheduling</div>
+    <div class="splash-tag">Scheduling<br>Timekeeping<br>Statistics</div>
   </div>
   <div class="splash-bar"><div class="splash-fill"></div></div>
 </div>
@@ -541,7 +550,8 @@ const RANK_DEFAULTS = {
   'Captain':'#ef4444','Beach Captain':'#ef4444',
   'Lieutenant':'#f97316','Vet':'#3b82f6',
   'Guard':'#a78bfa','Rookie':'#a78bfa',
-  'Replacement':'#94a3b8','Volunteer':'#94a3b8'
+  'Replacement':'#94a3b8','Volunteer':'#94a3b8',
+  'Cadet':'#6ee7b7'
 };
 let RC = {...RANK_DEFAULTS};
 
@@ -559,6 +569,240 @@ function rs(rank) {
   const r=parseInt(hex.slice(1,3),16),g=parseInt(hex.slice(3,5),16),b=parseInt(hex.slice(5,7),16);
   return `background:${hex};color:${(0.299*r+0.587*g+0.114*b)/255>0.55?'#1a2d3d':'#fff'};`;
 }
+
+// ══════════════════════════════════════════
+// TIDE DATA — Long Branch Fishing Pier NJ
+// Source: USHarbors.com PDFs, May–Sep 2026
+// Each entry: [minutes_from_midnight, "H"|"L", height_ft]
+// ══════════════════════════════════════════
+const TIDE_DATA={
+  "2026-05-01":[[107,"L",0.0],[472,"H",4.3],[830,"L",0.3],[1209,"H",5.2]],
+  "2026-05-02":[[149,"L",0.0],[511,"H",4.2],[867,"L",0.4],[1245,"H",5.1]],
+  "2026-05-03":[[188,"L",0.1],[550,"H",4.1],[904,"L",0.6],[1280,"H",4.9]],
+  "2026-05-04":[[226,"L",0.2],[590,"H",3.9],[939,"L",0.7],[1317,"H",4.7]],
+  "2026-05-05":[[263,"L",0.4],[633,"H",3.8],[973,"L",0.9],[1356,"H",4.5]],
+  "2026-05-06":[[301,"L",0.6],[679,"H",3.6],[1008,"L",1.1],[1399,"H",4.3]],
+  "2026-05-07":[[342,"L",0.8],[730,"H",3.6],[1047,"L",1.3]],
+  "2026-05-08":[[9,"H",4.2],[390,"L",0.9],[780,"H",3.6],[1101,"L",1.5]],
+  "2026-05-09":[[60,"H",4.2],[448,"L",0.9],[828,"H",3.7],[1176,"L",1.5]],
+  "2026-05-10":[[113,"H",4.1],[507,"L",0.9],[877,"H",3.9],[1250,"L",1.3]],
+  "2026-05-11":[[167,"H",4.2],[562,"L",0.7],[930,"H",4.2],[1314,"L",1.0]],
+  "2026-05-12":[[227,"H",4.2],[612,"L",0.4],[986,"H",4.6],[1371,"L",0.6]],
+  "2026-05-13":[[289,"H",4.3],[660,"L",0.2],[1040,"H",5.0],[1424,"L",0.2]],
+  "2026-05-14":[[347,"H",4.5],[707,"L",0.0],[1091,"H",5.5]],
+  "2026-05-15":[[37,"L",-0.1],[400,"H",4.6],[756,"L",-0.2],[1139,"H",5.8]],
+  "2026-05-16":[[91,"L",-0.4],[451,"H",4.7],[808,"L",-0.3],[1188,"H",6.0]],
+  "2026-05-17":[[145,"L",-0.5],[503,"H",4.8],[861,"L",-0.3],[1238,"H",6.0]],
+  "2026-05-18":[[197,"L",-0.6],[557,"H",4.7],[914,"L",-0.2],[1292,"H",5.8]],
+  "2026-05-19":[[249,"L",-0.5],[615,"H",4.6],[966,"L",-0.1],[1350,"H",5.6]],
+  "2026-05-20":[[300,"L",-0.3],[677,"H",4.5],[1021,"L",0.2],[1411,"H",5.3]],
+  "2026-05-21":[[355,"L",-0.1],[739,"H",4.5],[1080,"L",0.5]],
+  "2026-05-22":[[32,"H",5.0],[415,"L",0.1],[798,"H",4.5],[1147,"L",0.8]],
+  "2026-05-23":[[89,"H",4.8],[476,"L",0.3],[853,"H",4.6],[1216,"L",0.9]],
+  "2026-05-24":[[144,"H",4.5],[534,"L",0.3],[907,"H",4.6],[1280,"L",0.9]],
+  "2026-05-25":[[199,"H",4.3],[585,"L",0.4],[961,"H",4.7],[1337,"L",0.8]],
+  "2026-05-26":[[255,"H",4.2],[632,"L",0.4],[1013,"H",4.8],[1388,"L",0.6]],
+  "2026-05-27":[[310,"H",4.1],[675,"L",0.4],[1061,"H",5.0],[1434,"L",0.5]],
+  "2026-05-28":[[360,"H",4.1],[715,"L",0.5],[1104,"H",5.1]],
+  "2026-05-29":[[38,"L",0.4],[405,"H",4.1],[755,"L",0.6],[1144,"H",5.2]],
+  "2026-05-30":[[82,"L",0.3],[447,"H",4.1],[796,"L",0.6],[1181,"H",5.2]],
+  "2026-05-31":[[125,"L",0.3],[488,"H",4.1],[838,"L",0.7],[1218,"H",5.1]],
+  "2026-06-01":[[166,"L",0.3],[528,"H",4.0],[878,"L",0.8],[1255,"H",5.0]],
+  "2026-06-02":[[206,"L",0.3],[568,"H",3.9],[917,"L",0.9],[1292,"H",4.8]],
+  "2026-06-03":[[243,"L",0.4],[610,"H",3.8],[954,"L",1.0],[1329,"H",4.7]],
+  "2026-06-04":[[280,"L",0.5],[654,"H",3.8],[990,"L",1.1],[1370,"H",4.5]],
+  "2026-06-05":[[317,"L",0.6],[700,"H",3.8],[1028,"L",1.2],[1415,"H",4.4]],
+  "2026-06-06":[[357,"L",0.7],[747,"H",3.9],[1075,"L",1.3]],
+  "2026-06-07":[[25,"H",4.4],[402,"L",0.7],[792,"H",4.1],[1138,"L",1.4]],
+  "2026-06-08":[[75,"H",4.3],[455,"L",0.7],[839,"H",4.3],[1212,"L",1.3]],
+  "2026-06-09":[[128,"H",4.3],[511,"L",0.6],[889,"H",4.6],[1281,"L",1.0]],
+  "2026-06-10":[[186,"H",4.2],[567,"L",0.4],[944,"H",4.9],[1343,"L",0.7]],
+  "2026-06-11":[[251,"H",4.2],[621,"L",0.2],[1004,"H",5.3],[1401,"L",0.3]],
+  "2026-06-12":[[316,"H",4.3],[675,"L",0.1],[1063,"H",5.6]],
+  "2026-06-13":[[17,"L",0.0],[377,"H",4.5],[730,"L",-0.1],[1119,"H",5.9]],
+  "2026-06-14":[[74,"L",-0.2],[434,"H",4.6],[787,"L",-0.2],[1172,"H",6.0]],
+  "2026-06-15":[[130,"L",-0.4],[489,"H",4.7],[845,"L",-0.2],[1225,"H",6.0]],
+  "2026-06-16":[[183,"L",-0.6],[545,"H",4.8],[901,"L",-0.2],[1280,"H",5.9]],
+  "2026-06-17":[[234,"L",-0.6],[602,"H",4.8],[955,"L",0.0],[1336,"H",5.6]],
+  "2026-06-18":[[284,"L",-0.5],[661,"H",4.8],[1008,"L",0.2],[1393,"H",5.3]],
+  "2026-06-19":[[333,"L",-0.3],[719,"H",4.8],[1063,"L",0.5]],
+  "2026-06-20":[[10,"H",5.0],[385,"L",0.0],[774,"H",4.8],[1122,"L",0.8]],
+  "2026-06-21":[[63,"H",4.7],[439,"L",0.2],[826,"H",4.8],[1186,"L",0.9]],
+  "2026-06-22":[[114,"H",4.4],[493,"L",0.4],[875,"H",4.8],[1249,"L",1.0]],
+  "2026-06-23":[[164,"H",4.1],[544,"L",0.6],[924,"H",4.8],[1307,"L",1.0]],
+  "2026-06-24":[[217,"H",3.9],[592,"L",0.7],[975,"H",4.8],[1359,"L",0.9]],
+  "2026-06-25":[[273,"H",3.8],[637,"L",0.8],[1025,"H",4.8],[1406,"L",0.8]],
+  "2026-06-26":[[328,"H",3.8],[681,"L",0.8],[1073,"H",4.9]],
+  "2026-06-27":[[12,"L",0.6],[378,"H",3.8],[724,"L",0.8],[1117,"H",5.0]],
+  "2026-06-28":[[57,"L",0.5],[423,"H",3.9],[768,"L",0.8],[1158,"H",5.0]],
+  "2026-06-29":[[101,"L",0.4],[466,"H",4.0],[813,"L",0.8],[1196,"H",5.1]],
+  "2026-06-30":[[144,"L",0.4],[506,"H",4.0],[856,"L",0.8],[1234,"H",5.0]],
+  "2026-07-01":[[184,"L",0.3],[546,"H",4.0],[898,"L",0.8],[1270,"H",4.9]],
+  "2026-07-02":[[221,"L",0.3],[586,"H",4.0],[936,"L",0.9],[1306,"H",4.8]],
+  "2026-07-03":[[256,"L",0.3],[625,"H",4.0],[973,"L",0.9],[1344,"H",4.7]],
+  "2026-07-04":[[290,"L",0.3],[666,"H",4.1],[1011,"L",1.0],[1386,"H",4.6]],
+  "2026-07-05":[[324,"L",0.4],[710,"H",4.2],[1055,"L",1.1],[1433,"H",4.5]],
+  "2026-07-06":[[363,"L",0.4],[756,"H",4.4],[1110,"L",1.1]],
+  "2026-07-07":[[45,"H",4.3],[409,"L",0.5],[804,"H",4.7],[1180,"L",1.1]],
+  "2026-07-08":[[99,"H",4.2],[466,"L",0.5],[855,"H",4.9],[1254,"L",1.0]],
+  "2026-07-09":[[157,"H",4.1],[529,"L",0.5],[913,"H",5.1],[1321,"L",0.7]],
+  "2026-07-10":[[223,"H",4.1],[592,"L",0.4],[978,"H",5.3],[1383,"L",0.4]],
+  "2026-07-11":[[294,"H",4.1],[654,"L",0.2],[1043,"H",5.5]],
+  "2026-07-12":[[1,"L",0.1],[361,"H",4.3],[1104,"H",5.7],[1434,"L",0.0]],
+  "2026-07-13":[[58,"L",-0.1],[420,"H",4.6],[773,"L",-0.1],[1160,"H",5.9]],
+  "2026-07-14":[[113,"L",-0.4],[475,"H",4.8],[831,"L",-0.2],[1213,"H",5.9]],
+  "2026-07-15":[[166,"L",-0.5],[529,"H",4.9],[887,"L",-0.2],[1265,"H",5.8]],
+  "2026-07-16":[[214,"L",-0.6],[583,"H",5.0],[939,"L",-0.1],[1316,"H",5.6]],
+  "2026-07-17":[[260,"L",-0.5],[637,"H",5.0],[989,"L",0.1],[1368,"H",5.3]],
+  "2026-07-18":[[304,"L",-0.3],[691,"H",5.0],[1039,"L",0.4],[1420,"H",4.9]],
+  "2026-07-19":[[349,"L",0.0],[742,"H",4.9],[1091,"L",0.7]],
+  "2026-07-20":[[31,"H",4.6],[396,"L",0.3],[791,"H",4.8],[1149,"L",1.0]],
+  "2026-07-21":[[81,"H",4.2],[445,"L",0.7],[838,"H",4.7],[1211,"L",1.1]],
+  "2026-07-22":[[129,"H",4.0],[497,"L",0.9],[885,"H",4.7],[1271,"L",1.2]],
+  "2026-07-23":[[180,"H",3.7],[550,"L",1.0],[935,"H",4.6],[1327,"L",1.1]],
+  "2026-07-24":[[236,"H",3.6],[602,"L",1.1],[989,"H",4.6],[1377,"L",1.0]],
+  "2026-07-25":[[296,"H",3.6],[651,"L",1.1],[1042,"H",4.7],[1425,"L",0.8]],
+  "2026-07-26":[[352,"H",3.7],[698,"L",1.0],[1091,"H",4.8]],
+  "2026-07-27":[[30,"L",0.7],[400,"H",3.9],[744,"L",0.9],[1134,"H",5.0]],
+  "2026-07-28":[[74,"L",0.5],[442,"H",4.1],[790,"L",0.8],[1174,"H",5.0]],
+  "2026-07-29":[[116,"L",0.3],[482,"H",4.2],[834,"L",0.7],[1211,"H",5.1]],
+  "2026-07-30":[[156,"L",0.2],[520,"H",4.3],[877,"L",0.7],[1246,"H",5.1]],
+  "2026-07-31":[[193,"L",0.2],[556,"H",4.4],[917,"L",0.7],[1282,"H",5.0]],
+  "2026-08-01":[[227,"L",0.1],[592,"H",4.5],[955,"L",0.7],[1319,"H",4.9]],
+  "2026-08-02":[[260,"L",0.2],[631,"H",4.6],[994,"L",0.7],[1360,"H",4.7]],
+  "2026-08-03":[[293,"L",0.2],[674,"H",4.7],[1037,"L",0.8],[1408,"H",4.5]],
+  "2026-08-04":[[330,"L",0.3],[722,"H",4.8],[1090,"L",0.9]],
+  "2026-08-05":[[21,"H",4.3],[374,"L",0.5],[775,"H",4.9],[1158,"L",1.0]],
+  "2026-08-06":[[79,"H",4.2],[433,"L",0.6],[831,"H",5.0],[1235,"L",1.0]],
+  "2026-08-07":[[141,"H",4.0],[504,"L",0.6],[892,"H",5.1],[1306,"L",0.8]],
+  "2026-08-08":[[209,"H",4.0],[577,"L",0.6],[961,"H",5.2],[1369,"L",0.5]],
+  "2026-08-09":[[282,"H",4.1],[643,"L",0.4],[1031,"H",5.4],[1427,"L",0.2]],
+  "2026-08-10":[[349,"H",4.4],[704,"L",0.2],[1093,"H",5.6]],
+  "2026-08-11":[[41,"L",-0.1],[407,"H",4.7],[762,"L",0.0],[1147,"H",5.7]],
+  "2026-08-12":[[93,"L",-0.3],[460,"H",5.0],[817,"L",-0.1],[1197,"H",5.8]],
+  "2026-08-13":[[143,"L",-0.5],[510,"H",5.2],[870,"L",-0.1],[1245,"H",5.7]],
+  "2026-08-14":[[188,"L",-0.5],[559,"H",5.3],[920,"L",-0.1],[1292,"H",5.4]],
+  "2026-08-15":[[230,"L",-0.4],[607,"H",5.2],[966,"L",0.1],[1339,"H",5.1]],
+  "2026-08-16":[[270,"L",-0.1],[655,"H",5.1],[1011,"L",0.4],[1387,"H",4.8]],
+  "2026-08-17":[[309,"L",0.2],[703,"H",5.0],[1057,"L",0.7],[1436,"H",4.4]],
+  "2026-08-18":[[349,"L",0.6],[750,"H",4.8],[1108,"L",1.0]],
+  "2026-08-19":[[45,"H",4.1],[393,"L",1.0],[797,"H",4.7],[1167,"L",1.3]],
+  "2026-08-20":[[95,"H",3.8],[446,"L",1.2],[845,"H",4.5],[1231,"L",1.4]],
+  "2026-08-21":[[146,"H",3.7],[507,"L",1.4],[895,"H",4.4],[1292,"L",1.3]],
+  "2026-08-22":[[202,"H",3.6],[568,"L",1.4],[951,"H",4.4],[1346,"L",1.2]],
+  "2026-08-23":[[264,"H",3.6],[623,"L",1.3],[1009,"H",4.5],[1395,"L",1.0]],
+  "2026-08-24":[[323,"H",3.8],[673,"L",1.1],[1062,"H",4.7],[1439,"L",0.7]],
+  "2026-08-25":[[372,"H",4.0],[720,"L",1.0],[1107,"H",4.9]],
+  "2026-08-26":[[42,"L",0.5],[415,"H",4.3],[765,"L",0.8],[1147,"H",5.1]],
+  "2026-08-27":[[82,"L",0.3],[453,"H",4.5],[809,"L",0.6],[1184,"H",5.2]],
+  "2026-08-28":[[122,"L",0.2],[488,"H",4.7],[853,"L",0.5],[1220,"H",5.2]],
+  "2026-08-29":[[159,"L",0.1],[523,"H",4.9],[895,"L",0.4],[1256,"H",5.1]],
+  "2026-08-30":[[195,"L",0.0],[559,"H",5.0],[936,"L",0.4],[1295,"H",4.9]],
+  "2026-08-31":[[229,"L",0.1],[598,"H",5.1],[978,"L",0.4],[1338,"H",4.7]],
+  "2026-09-01":[[265,"L",0.2],[643,"H",5.1],[1023,"L",0.6],[1389,"H",4.5]],
+  "2026-09-02":[[304,"L",0.3],[695,"H",5.1],[1077,"L",0.8]],
+  "2026-09-03":[[7,"H",4.3],[352,"L",0.6],[754,"H",5.1],[1145,"L",1.0]],
+  "2026-09-04":[[70,"H",4.1],[416,"L",0.8],[817,"H",5.1],[1222,"L",1.0]],
+  "2026-09-05":[[134,"H",4.1],[494,"L",0.9],[881,"H",5.0],[1294,"L",0.8]],
+  "2026-09-06":[[203,"H",4.1],[570,"L",0.8],[951,"H",5.1],[1356,"L",0.6]],
+  "2026-09-07":[[273,"H",4.3],[636,"L",0.5],[1020,"H",5.2],[1411,"L",0.2]],
+  "2026-09-08":[[338,"H",4.6],[695,"L",0.3],[1079,"H",5.4]],
+  "2026-09-09":[[21,"L",0.0],[393,"H",5.0],[750,"L",0.1],[1131,"H",5.5]],
+  "2026-09-10":[[69,"L",-0.2],[441,"H",5.3],[801,"L",0.0],[1177,"H",5.5]],
+  "2026-09-11":[[114,"L",-0.3],[486,"H",5.5],[851,"L",0.0],[1221,"H",5.4]],
+  "2026-09-12":[[157,"L",-0.2],[530,"H",5.5],[897,"L",0.0],[1264,"H",5.2]],
+  "2026-09-13":[[197,"L",-0.1],[572,"H",5.4],[941,"L",0.2],[1307,"H",4.9]],
+  "2026-09-14":[[234,"L",0.2],[615,"H",5.2],[982,"L",0.4],[1352,"H",4.6]],
+  "2026-09-15":[[270,"L",0.5],[659,"H",5.0],[1024,"L",0.7],[1399,"H",4.2]],
+  "2026-09-16":[[305,"L",0.9],[706,"H",4.8],[1069,"L",1.0]],
+  "2026-09-17":[[10,"H",4.0],[344,"L",1.2],[755,"H",4.6],[1122,"L",1.3]],
+  "2026-09-18":[[62,"H",3.8],[393,"L",1.5],[805,"H",4.4],[1186,"L",1.5]],
+  "2026-09-19":[[115,"H",3.6],[460,"L",1.7],[857,"H",4.3],[1252,"L",1.4]],
+  "2026-09-20":[[170,"H",3.6],[532,"L",1.7],[912,"H",4.3],[1310,"L",1.3]],
+  "2026-09-21":[[229,"H",3.7],[593,"L",1.5],[970,"H",4.4],[1359,"L",1.0]],
+  "2026-09-22":[[287,"H",3.9],[646,"L",1.3],[1025,"H",4.6],[1403,"L",0.8]],
+  "2026-09-23":[[338,"H",4.2],[693,"L",1.0],[1073,"H",4.8]],
+  "2026-09-24":[[4,"L",0.5],[381,"H",4.6],[738,"L",0.7],[1115,"H",5.0]],
+  "2026-09-25":[[44,"L",0.3],[419,"H",4.9],[783,"L",0.5],[1154,"H",5.1]],
+  "2026-09-26":[[83,"L",0.1],[455,"H",5.2],[828,"L",0.3],[1192,"H",5.1]],
+  "2026-09-27":[[123,"L",0.0],[491,"H",5.4],[874,"L",0.1],[1232,"H",5.1]],
+  "2026-09-28":[[162,"L",0.0],[529,"H",5.5],[919,"L",0.1],[1274,"H",4.9]],
+  "2026-09-29":[[202,"L",0.0],[572,"H",5.6],[964,"L",0.2],[1322,"H",4.7]],
+  "2026-09-30":[[243,"L",0.2],[621,"H",5.5],[1013,"L",0.4],[1377,"H",4.4]]
+};
+
+// Duty window: 8:45 AM–7:15 PM
+const TIDE_START=525, TIDE_END=1155;
+
+function _minsToTimeStr(m) {
+  m=((Math.round(m/15)*15)%1440+1440)%1440;
+  const h=Math.floor(m/60), min=m%60;
+  const ampm=h>=12?'PM':'AM';
+  const h12=h===0?12:h>12?h-12:h;
+  return `${h12}:${String(min).padStart(2,'0')} ${ampm}`;
+}
+
+function _getTidesForDay(dateStr) {
+  const raw=TIDE_DATA[dateStr];
+  if(!raw||!raw.length) return [];
+  const inWin=raw.filter(t=>t[0]>=TIDE_START&&t[0]<=TIDE_END);
+  let sel;
+  if(inWin.length>=2){
+    sel=inWin.slice(0,2);
+  } else if(inWin.length===1){
+    const out=raw.filter(t=>t[0]<TIDE_START||t[0]>TIDE_END)
+      .sort((a,b)=>Math.min(Math.abs(a[0]-TIDE_START),Math.abs(a[0]-TIDE_END))-Math.min(Math.abs(b[0]-TIDE_START),Math.abs(b[0]-TIDE_END)));
+    sel=out.length?[inWin[0],out[0]].sort((a,b)=>a[0]-b[0]):inWin;
+  } else {
+    const before=raw.filter(t=>t[0]<TIDE_START).sort((a,b)=>b[0]-a[0]);
+    const after=raw.filter(t=>t[0]>TIDE_END).sort((a,b)=>a[0]-b[0]);
+    sel=[...(before.length?[before[0]]:[]),...(after.length?[after[0]]:[])];
+    if(!sel.length) sel=[raw[0]];
+  }
+  return sel.map(t=>({time:_minsToTimeStr(t[0]),type:t[1]==='H'?'High':'Low',height:t[2]}));
+}
+
+function _tideRowsHtml(dateStr) {
+  const tides=_getTidesForDay(dateStr);
+  if(!tides.length) return '<div class="muted" style="font-size:.82rem;padding:6px 0">No tide data available</div>';
+  return tides.map(t=>`
+    <div class="tide-row">
+      <div class="tide-row-icon">${t.type==='High'?'🌊':'〰️'}</div>
+      <div class="tide-row-main">
+        <div class="tide-row-time">${t.time}</div>
+        <div class="tide-row-sub">${t.type} tide</div>
+      </div>
+      <div class="tide-row-ht">${t.height>=0?t.height:t.height} ft</div>
+    </div>`).join('');
+}
+
+function tideCardHtml() {
+  const today=ymd(new Date());
+  const tomorrow=ymd(new Date(Date.now()+86400000));
+  const hasTodayData=!!TIDE_DATA[today], hasTomData=!!TIDE_DATA[tomorrow];
+  if(!hasTodayData&&!hasTomData) return '';
+  return `<div class="card" style="margin-bottom:14px">
+    <div class="card-title" style="display:flex;align-items:center;justify-content:space-between">
+      🌊 Tides — Long Branch
+      <div style="display:flex;gap:5px">
+        <button class="tide-date-btn on" onclick="tideSelectDate('today',this)">Today</button>
+        ${hasTomData?`<button class="tide-date-btn" onclick="tideSelectDate('tomorrow',this)">Tomorrow</button>`:''}
+      </div>
+    </div>
+    <div id="tide-pane-today">${_tideRowsHtml(today)}</div>
+    ${hasTomData?`<div id="tide-pane-tomorrow" style="display:none">${_tideRowsHtml(tomorrow)}</div>`:''}
+  </div>`;
+}
+
+function tideSelectDate(which, btn) {
+  document.querySelectorAll('.tide-date-btn').forEach(b=>b.classList.remove('on'));
+  btn.classList.add('on');
+  const t=document.getElementById('tide-pane-today');
+  const m=document.getElementById('tide-pane-tomorrow');
+  if(t) t.style.display=which==='today'?'':'none';
+  if(m) m.style.display=which==='tomorrow'?'':'none';
+}
+
 
 
 // Post color helper
@@ -632,8 +876,29 @@ function getEffectiveAvailMap(viewPeriod, changesObj) {
   });
   return map;
 }
+// Returns {weekStartDate: hours} grouped by Sat-Fri work week
 function countRegularHrs(statusMap) {
-  return Object.values(statusMap).filter(s => AV_REGULAR.has(s)).length * 8;
+  const weeks = {};
+  Object.entries(statusMap).forEach(([ds, s]) => {
+    if (!AV_REGULAR.has(s)) return;
+    const wk = weekKey(ds);
+    weeks[wk] = (weeks[wk] || 0) + 8;
+  });
+  return weeks;
+}
+function weekKey(ds){
+  const d=new Date(ds+'T12:00:00'),dow=d.getDay(),diff=dow===6?0:-(dow+1);
+  const sat=new Date(d);sat.setDate(d.getDate()+diff);return ymd(sat);
+}
+// Returns {weekStartDate: count} of days with any working status per Sat-Fri week
+function countWorkingDaysPerWeek(statusMap) {
+  const weeks = {};
+  Object.entries(statusMap).forEach(([ds, s]) => {
+    if (!AV_AVAIL.has(s)) return;
+    const wk = weekKey(ds);
+    weeks[wk] = (weeks[wk] || 0) + 1;
+  });
+  return weeks;
 }
 function countOffDays(statusMap) {
   return Object.values(statusMap).filter(s => s === 'FIXED_OFF' || s === 'FLEX_OFF').length;
@@ -701,6 +966,10 @@ let mobAvailChanges={};
 let CLOCK_STATUS={clocked_in:false,record:null};
 let PENDING_STATS=[]; // time records needing stats forms
 let SNOOZED_STATS={}; // {time_record_id: snooze_until_date} // current clock-in state
+const _DISMISSED_AVAIL_KEY='sts_dismissed_avail';
+function _loadDismissedAvail(){try{return JSON.parse(localStorage.getItem(_DISMISSED_AVAIL_KEY)||'{}');}catch(e){return {};}}
+function _saveDismissedAvail(obj){try{localStorage.setItem(_DISMISSED_AVAIL_KEY,JSON.stringify(obj));}catch(e){}}
+function dismissAvailReminder(periodId){const d=_loadDismissedAvail();d[periodId]=true;_saveDismissedAvail(d);const el=document.getElementById('content');if(el)renderGuardDash(el);}
 let IMPERSONATE_CLOCK_STATUS={clocked_in:false,record:null}; // impersonated guard's clock state
 let D={guards:[],posts:[],templates:[],periods:[],activePeriod:null,
        shifts:[],avail:[],pendingReqs:[],pendingSwaps:[],weeklyHours:{},
@@ -751,12 +1020,17 @@ window.onload = () => {
     return;
   }
 
-  // 1. Try localStorage directly (works for direct desktop / Android access)
+  // 1. Token injected server-side by doGet via ?st= query param (most reliable for iOS PWA cold starts —
+  //    survives the script.google.com → googleusercontent.com redirect that strips URL fragments)
+  const _serverToken = (typeof SESSION_TOKEN !== 'undefined' && SESSION_TOKEN) ? SESSION_TOKEN : null;
+  if (_serverToken) { tryResumeSession(_serverToken); return; }
+
+  // 2. Try localStorage directly (works for direct desktop / Android access)
   let localToken = null;
   try { localToken = localStorage.getItem('sts_token'); } catch(e) {}
   if (localToken) { tryResumeSession(localToken); return; }
 
-  // 2. Token injected via URL hash by PWA wrapper (most reliable on iOS — no postMessage timing)
+  // 3. Token injected via URL hash (legacy fallback)
   try {
     const hash = window.location.hash;
     if (hash.startsWith('#st=')) {
@@ -766,7 +1040,7 @@ window.onload = () => {
     }
   } catch(e) {}
 
-  // 3. Ask PWA wrapper via postMessage (fallback)
+  // 4. Ask PWA wrapper via postMessage (last resort)
   let resolved = false;
   const timeout = setTimeout(() => { resolved = true; showLogin(); }, 3000);
 
@@ -1147,7 +1421,7 @@ function buildSidebar(){
   refreshBadges();
 }
 function navItem(p,icon,label){return `<div class="nav-item${PANEL===p?' on':''}" onclick="go('${p}')">${icon} ${label}</div>`;}
-function toggleGV(){IMPERSONATE=null;GV=!GV;setSidebarUser();buildSidebar();go(GV?'my-avail':'dashboard');}
+function toggleGV(){IMPERSONATE=null;GV=!GV;setSidebarUser();buildSidebar();go('dashboard');}
 function refreshBadges(){} // swap badges removed
 
 // ══════════════════════════════════════════
@@ -1209,10 +1483,10 @@ R.dashboard=function(){
   if(isAdmin()){
     el.innerHTML=`
       <div class="stats">
-        <div class="stat"><div class="stat-val blue">${D.guards.length}</div><div class="stat-lbl">Guards</div></div>
-        <div class="stat"><div class="stat-val blue">${D.shifts.filter(s=>s.status==='filled').length}</div><div class="stat-lbl">Filled</div></div>
-        <div class="stat"><div class="stat-val amber">${D.shifts.filter(s=>s.status==='open').length}</div><div class="stat-lbl">Open</div></div>
-        <div class="stat"><div class="stat-val red">${D.pendingReqs.length}</div><div class="stat-lbl">Requests</div></div>
+        <div class="stat"><div class="stat-val blue">${D.guards.length}</div><div class="stat-lbl">Active Guards</div></div>
+        <div class="stat"><div class="stat-val blue" id="dash-clocked-in-count">…</div><div class="stat-lbl">Clocked In</div></div>
+        <div class="stat"><div class="stat-val amber" id="dash-clocked-out-count">…</div><div class="stat-lbl">Clocked Out Today</div></div>
+        <div class="stat"><div class="stat-val green" id="dash-stats-count">…</div><div class="stat-lbl">Stats Submitted</div></div>
       </div>
       <div class="card">
         <div class="card-title">Active Pay Period</div>
@@ -1230,6 +1504,7 @@ R.dashboard=function(){
           </div>`:
           `<p class="muted">No active pay period. <a href="#" onclick="go('periods')">Create one →</a></p>`}
       </div>
+      ${tideCardHtml()}
       <div class="card" id="clocked-in-card">
         <div class="card-title">Currently Clocked In</div>
         <div id="clocked-in-body"><span class="muted">Loading…</span></div>
@@ -1245,6 +1520,7 @@ R.dashboard=function(){
       ${D.pendingReqs.length?`<div class="card"><div class="card-title">⚡ Pending Requests</div>${reqTable(D.pendingReqs.slice(0,5))}</div>`:''}`;
     loadClockedInCard();
     loadClockedOutCard();
+    loadDashStatsCount();
     loadYesterdayCard();
   } else {
     renderGuardDash(el);
@@ -1263,8 +1539,12 @@ function renderGuardDash(el){
   const todayShifts=mine.filter(s=>s.date===today);
   const upcoming=mine.filter(s=>s.date>=today).sort((a,b)=>a.date>b.date?1:-1);
   const _upcomingDates=new Set(upcoming.map(s=>s.date));
-  const _allAvailOff=[...(D.avail||[]),...(D.availNext||[])].filter(a=>
-    String(a.guard_id)===gid&&a.date>=today&&!_upcomingDates.has(a.date)&&(a.status==='FIXED_OFF'||a.status==='FLEX_OFF'));
+  const _allAvailOffSeen=new Set();
+  const _allAvailOff=[...(D.avail||[]),...(D.availNext||[])].filter(a=>{
+    if(!( String(a.guard_id)===gid&&a.date>=today&&!_upcomingDates.has(a.date)&&(a.status==='FIXED_OFF'||a.status==='FLEX_OFF')))return false;
+    if(_allAvailOffSeen.has(a.date))return false;
+    _allAvailOffSeen.add(a.date);return true;
+  });
   const _dashItems=[
     ...upcoming.map(s=>({_type:'shift',date:s.date,data:s})),
     ..._allAvailOff.map(a=>({_type:'off',date:a.date,data:a}))
@@ -1272,8 +1552,9 @@ function renderGuardDash(el){
   const tasks=[];
   const _promptPeriod = D.nextPeriod || D.activePeriod;
   const _promptAvail = D.nextPeriod ? (D.availNext||[]) : D.avail;
-  if(_promptPeriod && !_promptAvail.some(a=>String(a.guard_id)===gid))
-    tasks.push({icon:'🗓',text:`Submit your availability for <strong>${fd(_promptPeriod.start_date)} – ${fd(_promptPeriod.schedule_thru)}</strong>`,btn:`<button class="btn btn-wave btn-sm" onclick="availViewPeriodId='${_promptPeriod.id}';go('my-avail')">Submit</button>`});
+  const _dismissedAvail=_loadDismissedAvail();
+  if(_promptPeriod && !_promptAvail.some(a=>String(a.guard_id)===gid) && !_dismissedAvail[_promptPeriod.id])
+    tasks.push({icon:'🗓',text:`Submit your availability for <strong>${fd(_promptPeriod.start_date)} – ${fd(_promptPeriod.schedule_thru)}</strong>`,btn:`<button class="btn btn-wave btn-sm" onclick="availViewPeriodId='${_promptPeriod.id}';go('my-avail')">Submit</button><button class="btn btn-outline btn-sm" style="color:var(--muted);margin-left:4px" onclick="dismissAvailReminder('${_promptPeriod.id}')" title="Dismiss">✕</button>`});
   D.mySwaps.filter(sw=>sw.target_id===gid&&sw.status==='pending_target').forEach(sw=>{
     const from=D.guards.find(g=>g.id===sw.requestor_id), shift=D.shifts.find(s=>s.id===sw.shift_id);
     tasks.push({icon:'🔄',text:`Swap request from <strong>${from?from.name:'a guard'}</strong>${shift?' for '+fd(shift.date):''}`,btn:`<button class="btn btn-green btn-sm" onclick="go('my-avail')">View</button>`});
@@ -1292,9 +1573,12 @@ function renderGuardDash(el){
       <div><span class="muted">Schedule Through</span><div style="font-weight:600">${fd(D.activePeriod.schedule_thru)}</div></div>
       <div><span class="muted">Availability Deadline</span><div style="font-weight:600;color:${dlColor}">${dlNote}</div></div>
     </div>
-    ${daysUntilDl!==null&&daysUntilDl>=0&&!D.avail.some(a=>String(a.guard_id)===gid)?`<div style="margin-top:10px;background:#fef9c3;border-radius:8px;padding:8px 12px;font-size:.82rem;display:flex;align-items:center;justify-content:space-between">
+    ${daysUntilDl!==null&&daysUntilDl>=0&&!D.avail.some(a=>String(a.guard_id)===gid)&&!_dismissedAvail[D.activePeriod.id]?`<div style="margin-top:10px;background:#fef9c3;border-radius:8px;padding:8px 12px;font-size:.82rem;display:flex;align-items:center;justify-content:space-between">
       <span>⚠️ Availability not submitted yet!</span>
-      <button class="btn btn-wave btn-sm" onclick="go('my-avail')">Submit Now</button>
+      <div class="flex gap2">
+        <button class="btn btn-wave btn-sm" onclick="go('my-avail')">Submit Now</button>
+        <button class="btn btn-outline btn-sm" style="color:var(--muted)" onclick="dismissAvailReminder('${D.activePeriod.id}')" title="Dismiss">✕</button>
+      </div>
     </div>`:``}
   </div>`:'';
 
@@ -1305,6 +1589,7 @@ function renderGuardDash(el){
     ${ppCard}
     ${todayShifts.length?`<div class="card"><div class="card-title">📍 Today</div>${shiftCards(todayShifts,true)}</div>`:''}
     ${tasks.length?`<div class="card"><div class="card-title">⚡ Action Needed</div>${tasks.map(t=>`<div class="task-row"><div style="font-size:1.1rem">${t.icon}</div><div style="flex:1;font-size:.87rem">${t.text}</div>${t.btn}</div>`).join('')}</div>`:''}
+    ${tideCardHtml()}
     <div class="card">
       <div class="card-title" style="display:flex;align-items:center;justify-content:space-between">
         📅 My Shifts (${upcoming.length})
@@ -1361,6 +1646,18 @@ function cycleSchedView(){
   renderSchedGrid();
 }
 
+function _adminOffChip(avStatus,avEntry,gid,ds){
+  if(avStatus==='FIXED_OFF'){
+    const hasFlex=avEntry&&avEntry.notes==='guard_flex';
+    const userNote=avEntry&&avEntry.notes&&avEntry.notes!=='guard_flex'?avEntry.notes:'';
+    return`<div style="align-self:flex-start;background:#fee2e2;border-left:2px solid #dc2626;border-radius:3px;padding:2px 5px;margin:1px;cursor:pointer;font-size:.68rem;font-weight:700;color:#dc2626;display:inline-flex;align-items:center;gap:3px" onclick="cellClick('${gid}','${ds}',event)" title="Day off${userNote?' — '+userNote:''} — click to change">Day Off${hasFlex?'<span style="color:#d97706;font-size:.6rem">~Flex</span>':''}${userNote?`<span style="font-size:.6rem;font-weight:400;color:#dc2626;opacity:.8">${userNote}</span>`:''}</div>`;
+  }
+  if(avStatus==='FLEX_OFF'){
+    const userNote=avEntry&&avEntry.notes&&avEntry.notes!=='guard_flex'?avEntry.notes:'';
+    return`<div style="align-self:flex-start;background:#fef9c3;border-left:2px solid #ca8a04;border-radius:3px;padding:2px 5px;margin:1px;cursor:pointer;font-size:.68rem;font-weight:700;color:#92400e" onclick="cellClick('${gid}','${ds}',event)" title="Guard prefers off (flexible)${userNote?' — '+userNote:''} — click to change">〜 Flex${userNote?`<span style="font-size:.6rem;font-weight:400;color:#92400e;opacity:.8">${userNote}</span>`:''}</div>`;
+  }
+  return avStatus?`<div style="font-size:.6rem;font-weight:700;color:${AV_COLORS[avStatus]||'#ccc'};padding:0 2px 1px;line-height:1.3">${AV_LATE.has(avStatus)?'🌙 ':''}${AV_SHORT[avStatus]||avStatus}</div>`:'';
+}
 function renderSchedGrid(){
   const el=document.getElementById('sched-view');if(!el)return;
   if(!D.activePeriod){el.innerHTML='<p class="muted" style="padding:20px">No pay period.</p>';return;}
@@ -1437,8 +1734,15 @@ function renderSchedGrid(){
       if(guardShifts.length){
         // Accumulate hours for ALL shifts this day
         guardShifts.forEach(shift=>{
-          const t=D.templates.find(x=>x.code===shift.template_code);
-          const hrs=t?parseFloat(t.paid_hours)||0:0;
+          let hrs=0;
+          if(shift.template_code==='SPEC'&&shift.custom_start&&shift.custom_end){
+            const[sh,sm]=shift.custom_start.split(':').map(Number);
+            const[eh,em]=shift.custom_end.split(':').map(Number);
+            hrs=((eh*60+em)-(sh*60+sm))/60;
+          }else{
+            const t=D.templates.find(x=>x.code===shift.template_code);
+            hrs=t?parseFloat(t.paid_hours)||0:0;
+          }
           const wk=getWeekKey(ds);weekHours[wk]=(weekHours[wk]||0)+hrs;
         });
         const avDot=avStatus?`<div class="av-dot" style="background:${AV_COLORS[avStatus]||'#ccc'}" title="${AV_LABELS[avStatus]||''}"></div>`:'';
@@ -1458,7 +1762,8 @@ function renderSchedGrid(){
           <div onclick="cellClick('${gid}','${ds}',event)" style="text-align:center;font-size:.75rem;color:#9ca3af;cursor:pointer;padding:1px 0;border-top:1px dashed #e5e7eb;margin-top:1px" title="Add another shift">+</div>
         </td>`;
       } else {
-        const tintCls=avStatus&&AV_COLORS[avStatus]?`av-tint-${avStatus}`:'av-tint-none';
+        const isOffChip=avStatus==='FIXED_OFF'||avStatus==='FLEX_OFF';
+        const tintCls=!isOffChip&&avStatus&&AV_COLORS[avStatus]?`av-tint-${avStatus}`:'av-tint-none';
         const isUnavail=avStatus==='FIXED_OFF';
 
         // Get open slots for this date — group by post+template
@@ -1483,7 +1788,7 @@ function renderSchedGrid(){
           </div>`;
         }).join('');
 
-        const avBadge=avStatus?`<div style="font-size:.6rem;font-weight:700;color:${AV_COLORS[avStatus]||'#ccc'};padding:0 2px 1px;line-height:1.3">${AV_LATE.has(avStatus)?'🌙 ':''}${AV_SHORT[avStatus]||avStatus}</div>`:'';
+        const avBadge=_adminOffChip(avStatus,avEntry,gid,ds);
 
         var cellHtml=`<td class="${tintCls} ${colCls}" style="cursor:default;${satBorder}padding:2px;vertical-align:top;position:relative">
           <div style="display:flex;flex-direction:column;min-height:44px">
@@ -1609,7 +1914,7 @@ R['full-schedule-admin']=function(){
   if(!D.activePeriod){el.innerHTML='<div class="card"><p class="muted">No active pay period.</p></div>';return;}
   const dates=dateRange(D.activePeriod.start_date,D.activePeriod.schedule_thru);
   const today=ymd(new Date());
-  const RANK_ORDER=['Lifeguard Supervisor','Crew Captain','Captain','Beach Captain','Lieutenant','Vet','Guard','Rookie','Replacement','Volunteer'];
+  const RANK_ORDER=['Lifeguard Supervisor','Crew Captain','Captain','Beach Captain','Lieutenant','Vet','Guard','Rookie','Replacement','Volunteer','Cadet'];
   const rankIdx=r=>{ const i=RANK_ORDER.indexOf(r); return i<0?99:i; };
 
   const pOpts=D.periods.map(p=>`<option value="${p.id}"${D.activePeriod&&p.id===D.activePeriod.id?' selected':''}>${fd(p.start_date)} – ${fd(p.schedule_thru)}</option>`).join('');
@@ -1684,8 +1989,8 @@ R['full-schedule-admin']=function(){
               </div>
             </td>`;
           }
-          const avBadge=avStatus?`<div style="font-size:.6rem;font-weight:700;color:${AV_COLORS[avStatus]||'#ccc'};padding:0 2px;line-height:1.3">${AV_LATE.has(avStatus)?'🌙 ':''}${AV_SHORT[avStatus]||avStatus}</div>`:'';
-          const tintStyle=avStatus&&AV_COLORS[avStatus]?`background:${AV_COLORS[avStatus]}18;`:'';
+          const avBadge=_adminOffChip(avStatus,avEntry,gid,ds);
+          const tintStyle=avStatus&&AV_COLORS[avStatus]&&avStatus!=='FIXED_OFF'&&avStatus!=='FLEX_OFF'?`background:${AV_COLORS[avStatus]}18;`:'';
           return`<td class="${colCls}" style="${satBorder}${tintStyle}padding:1px 2px;vertical-align:middle;cursor:pointer" onclick="cellClick('${gid}','${ds}',event)">
             ${avBadge}
             <div style="text-align:center;font-size:.75rem;color:#d1d5db;line-height:1">+</div>
@@ -1748,7 +2053,7 @@ R['full-schedule-admin']=function(){
         }
         const avEntry=D.avail.find(a=>String(a.guard_id)===gid&&a.date===ds);
         const avStatus=avEntry?avEntry.status:null;
-        const avBadge=avStatus?`<div style="font-size:.6rem;font-weight:700;color:${AV_COLORS[avStatus]||'#ccc'};padding:0 2px;line-height:1.3">${AV_LATE.has(avStatus)?'🌙 ':''}${AV_SHORT[avStatus]||avStatus}</div>`:'';
+        const avBadge=_adminOffChip(avStatus,avEntry,gid,ds);
         const tintStyle=avStatus&&AV_COLORS[avStatus]?`background:${AV_COLORS[avStatus]}18;`:'';
         return`<td class="${colCls}" style="${satBorder}${tintStyle}padding:1px 2px;vertical-align:middle;cursor:pointer" onclick="cellClick('${gid}','${ds}',event)">
           ${avBadge}
@@ -2013,7 +2318,7 @@ function cellClick(guardId,dateStr,event){
             +'</div>'
             +(avEntry.notes?'<div style="font-size:.75rem;color:#64748b;margin-bottom:8px">Note: '+avEntry.notes+'</div>':'')
             +'<button class="btn btn-wave btn-sm" style="margin-bottom:10px" onclick="adminSaveMobSpecialTimes(\''+gid+'\',\''+dateStr+'\',this)">Save Times</button>'
-          :'<div style="color:'+AV_COLORS[_avS]+';font-weight:600;margin-bottom:10px">'+(AV_LATE.has(_avS)?'🌙 ':'')+AV_LABELS[_avS]+'</div>')
+          :'<div style="color:'+AV_COLORS[_avS]+';font-weight:600;margin-bottom:'+((_avS==='FIXED_OFF'||_avS==='FLEX_OFF')&&avEntry.notes&&avEntry.notes!=='guard_flex'?'4':'10')+'px">'+(AV_LATE.has(_avS)?'🌙 ':'')+AV_LABELS[_avS]+'</div>'+((_avS==='FIXED_OFF'||_avS==='FLEX_OFF')&&avEntry.notes&&avEntry.notes!=='guard_flex'?'<div style="font-size:.75rem;color:#64748b;margin-bottom:10px">Note: '+avEntry.notes+'</div>':''))
         :'<div class="muted" style="margin-bottom:10px">No availability set — can still assign</div>';
       const _mIsSpec=_avS==='S_SPEC';
       const _mSpecTimes=_mIsSpec?'':
@@ -2092,11 +2397,11 @@ function cellClick(guardId,dateStr,event){
              ${avEntry.notes?`<div style="font-size:.75rem;color:var(--muted)">Note: ${avEntry.notes}</div>`:''}
              <button class="btn btn-sm btn-wave" onclick="adminSaveSpecialTimes('${gid}','${dateStr}',this)" id="adm-sp-save-${gid}-${dateStr}">Save Times</button>
            </div>`
-        :`<div class="pop-header" style="padding-top:0;color:${AV_COLORS[avEntry.status]}">${AV_LATE.has(avEntry.status)?'🌙 ':''}${AV_LABELS[avEntry.status]||avEntry.status}</div>`)
+        :`<div class="pop-header" style="padding-top:0;color:${AV_COLORS[avEntry.status]}">${AV_LATE.has(avEntry.status)?'🌙 ':''}${AV_LABELS[avEntry.status]||avEntry.status}</div>${(avEntry.status==='FIXED_OFF'||avEntry.status==='FLEX_OFF')&&avEntry.notes&&avEntry.notes!=='guard_flex'?`<div style="font-size:.75rem;color:var(--muted);padding:0 12px 8px">Note: ${avEntry.notes}</div>`:''}`)
       :`<div class="pop-header" style="padding-top:0;color:var(--muted)">No availability set — can still assign</div>`;
 
     // Build LS8-available guard list for this date (for late shift template suggestions)
-    const RANK_ORDER=['Lifeguard Supervisor','Crew Captain','Captain','Beach Captain','Lieutenant','Vet','Guard','Rookie','Replacement','Volunteer'];
+    const RANK_ORDER=['Lifeguard Supervisor','Crew Captain','Captain','Beach Captain','Lieutenant','Vet','Guard','Rookie','Replacement','Volunteer','Cadet'];
     const lateAvailOnDay=D.avail.filter(a=>a.date===dateStr&&AV_LATE.has(a.status))
       .map(a=>({entry:a,guard:D.guards.find(g=>String(g.id)===String(a.guard_id))}))
       .filter(x=>x.guard)
@@ -2263,8 +2568,9 @@ function doAssignDayOff(guardId,dateStr){
   const gid=String(guardId);
   const avArr=D.avail;
   const existing=avArr.find(a=>String(a.guard_id)===gid&&a.date===dateStr);
-  const prevStatus=existing?.status,prevStart=existing?.custom_start,prevEnd=existing?.custom_end;
-  if(existing){existing.status='FIXED_OFF';existing.custom_start='';existing.custom_end='';}
+  const prevStatus=existing?.status,prevStart=existing?.custom_start,prevEnd=existing?.custom_end,prevNotes=existing?.notes;
+  const flexNote=prevStatus==='FLEX_OFF'?'guard_flex':'';
+  if(existing){existing.status='FIXED_OFF';existing.custom_start='';existing.custom_end='';existing.notes=flexNote;}
   else avArr.push({guard_id:guardId,date:dateStr,status:'FIXED_OFF',custom_start:'',custom_end:'',ot_willing:false,notes:''});
   closeAllPops();closeBSheet();
   if(PANEL==='schedule') renderSchedGrid();
@@ -2272,7 +2578,7 @@ function doAssignDayOff(guardId,dateStr){
   toast('Day off marked for guard.','ok');
   arun('clientSubmitAvailability',r=>{
     if(!r||!r.success){
-      if(existing){existing.status=prevStatus;existing.custom_start=prevStart;existing.custom_end=prevEnd;}
+      if(existing){existing.status=prevStatus;existing.custom_start=prevStart;existing.custom_end=prevEnd;existing.notes=prevNotes;}
       else{const i=avArr.findIndex(a=>String(a.guard_id)===gid&&a.date===dateStr);if(i>=0)avArr.splice(i,1);}
       if(PANEL==='schedule') renderSchedGrid();
       else if(PANEL==='full-schedule-admin') R['full-schedule-admin']();
@@ -2615,13 +2921,15 @@ R.guards=function(){
   document.getElementById('content').innerHTML=`<div class="card">
     <div class="card-title">Guard Roster (${D.guards.length})</div>
     <table class="tbl"><thead><tr>
-      ${th('name','Name')}${th('rank','Rank')}${th('email','Email')}${th('pay_rate','Pay Rate')}${th('status','Status')}<th></th>
+      ${th('name','Name')}${th('rank','Rank')}${th('email','Email')}${th('pay_rate','Pay Rate')}<th>Locker</th><th>Parking</th>${th('status','Status')}<th></th>
     </tr></thead>
     <tbody>${sorted.map(g=>`<tr>
       <td><strong>${g.name}</strong></td>
       <td><span class="rank-badge" style="${rs(g.rank)}">${g.rank}</span></td>
       <td style="font-size:.82rem">${g.email}</td>
       <td><span class="pay-hidden" id="pay-${g.id}" onclick="revealPay('${g.id}','${g.pay_rate||0}')" title="Click to reveal">•••</span></td>
+      <td style="font-size:.82rem;text-align:center">${g.locker_number||'—'}</td>
+      <td style="font-size:.82rem;text-align:center">${g.parking_pass||'—'}</td>
       <td><span class="badge b-${g.status==='active'?'approved':'pending'}">${g.status}</span></td>
       <td class="flex gap2">
         <button class="btn btn-outline btn-sm" onclick="showEditGuardModal('${g.id}')">Edit</button>
@@ -2635,6 +2943,11 @@ function revealPay(id,rate){
   if(el.dataset.revealed==='true'){el.textContent='•••';el.dataset.revealed='false';el.title='Click to reveal';}
   else{el.textContent=`$${parseFloat(rate).toFixed(2)}/hr`;el.dataset.revealed='true';el.title='Click to hide';
     setTimeout(()=>{if(el.dataset.revealed==='true'){el.textContent='•••';el.dataset.revealed='false';el.title='Click to reveal';}},8000);}
+}
+function togglePayRate(inputId,btnId){
+  const inp=document.getElementById(inputId),btn=document.getElementById(btnId);if(!inp)return;
+  if(inp.type==='password'){inp.type='text';inp.inputMode='decimal';if(btn)btn.textContent='🙈';}
+  else{inp.type='password';if(btn)btn.textContent='👁';}
 }
 
 // ══════════════════════════════════════════
@@ -2973,7 +3286,9 @@ R['my-avail']=function(){
           <div class="pop-header">${DAYS[d.getDay()]} ${MONTHS[d.getMonth()]} ${d.getDate()}</div>
           ${popItems}
         </div>
-        ${st==='S_SPEC'?`<div id="avspecial-${ds}" style="margin-top:4px">${renderSpecialDetail(ds,avEntry)}</div>`:`<div id="avspecial-${ds}"></div>`}
+        ${st==='S_SPEC'?`<div id="avspecial-${ds}" style="margin-top:4px">${renderSpecialDetail(ds,avEntry)}</div>`:
+          (st==='FIXED_OFF'||st==='FLEX_OFF')?`<div id="avspecial-${ds}" style="margin-top:4px">${renderOffDetail(ds,avEntry)}</div>`:
+          `<div id="avspecial-${ds}"></div>`}
       </div>
     </div>`;
   }).join('');
@@ -3082,23 +3397,33 @@ function getAvailView() {
   if (!availCache[availViewPeriodId]) availCache[availViewPeriodId] = [];
   return availCache[availViewPeriodId];
 }
+function _renderHrsCounter(weekMap, wdMap) {
+  const weeks = Object.keys({...weekMap, ...wdMap}).sort();
+  if (!weeks.length) return '<span style="color:var(--muted)">Reg. hrs: 0/40 · 0/5 days</span>';
+  return weeks.map(wk => {
+    const hrs = weekMap[wk] || 0;
+    const wd = wdMap[wk] || 0;
+    const hc = hrs > 40 ? 'var(--coral)' : hrs === 40 ? 'var(--green)' : 'var(--navy)';
+    const dc = wd > 5 ? 'var(--coral)' : wd === 5 ? 'var(--green)' : 'var(--navy)';
+    const prefix = weeks.length > 1 ? `<span style="color:var(--muted)">Wk ${fds(wk)}:</span> ` : '';
+    return `${prefix}<span style="font-weight:600;color:${hc}">${hrs}/40h</span> <span style="font-weight:600;color:${dc}">${wd}/5 days</span>`;
+  }).join(' &middot; ');
+}
 function updateAvailHoursCounter() {
   const el = document.getElementById('avail-hours-counter');
   if (!el) return;
   const vp = D.periods.find(p => p.id === availViewPeriodId) || D.activePeriod;
   if (!vp) return;
-  const hrs = countRegularHrs(getEffectiveAvailMap(vp, availChanges));
-  const hrsColor = hrs > 40 ? 'var(--coral)' : hrs === 40 ? 'var(--green)' : 'var(--navy)';
-  el.innerHTML = `<span style="font-weight:600;color:${hrsColor}">Reg. hrs: ${hrs}/40</span>`;
+  const effMap = getEffectiveAvailMap(vp, availChanges);
+  el.innerHTML = _renderHrsCounter(countRegularHrs(effMap), countWorkingDaysPerWeek(effMap));
 }
 function updateMobAvailHoursCounter() {
   const el = document.getElementById('mob-avail-hours-counter');
   if (!el) return;
   const vp = D.periods.find(p => p.id === availViewPeriodId) || D.activePeriod;
   if (!vp) return;
-  const hrs = countRegularHrs(getEffectiveAvailMap(vp, mobAvailChanges));
-  const hrsColor = hrs > 40 ? 'var(--coral)' : hrs === 40 ? 'var(--green)' : 'var(--navy)';
-  el.innerHTML = `<span style="font-weight:600;color:${hrsColor}">Reg. hrs: ${hrs}/40</span>`;
+  const effMap = getEffectiveAvailMap(vp, mobAvailChanges);
+  el.innerHTML = _renderHrsCounter(countRegularHrs(effMap), countWorkingDaysPerWeek(effMap));
 }
 
 function setMyAvail(ds,status){
@@ -3121,17 +3446,20 @@ function setMyAvail(ds,status){
   } else {
     // Remove any LSO companion row if switching away
     delete availChanges[ds+'_lso'];
+    const isOff=status==='FIXED_OFF'||status==='FLEX_OFF';
+    const existingNote=existing?.notes&&existing.notes!=='guard_flex'?existing.notes:'';
     availChanges[ds]={guard_id:myId(),date:ds,status,
       custom_start:status==='S_SPEC'?(existing?.custom_start||''):'',
       custom_end:status==='S_SPEC'?(existing?.custom_end||''):'',
       ot_willing:status==='S_8HR_OT',
-      notes:status==='S_SPEC'?(existing?.notes||''):''};
+      notes:(status==='S_SPEC'||isOff)?existingNote:''};
   }
 
-  // Show or clear special time inputs
+  // Show or clear detail inputs
   const specDiv=document.getElementById(`avspecial-${ds}`);
   if(specDiv){
     if(status==='S_SPEC') showSpecialDetail(ds);
+    else if(status==='FIXED_OFF'||status==='FLEX_OFF') showOffDetail(ds);
     else specDiv.innerHTML='';
   }
 
@@ -3172,6 +3500,26 @@ function showSpecialDetail(ds){
   container.innerHTML=renderSpecialDetail(ds, availChanges[ds]);
 }
 
+function renderOffDetail(ds, avEntry) {
+  const noteVal = avEntry?.notes && avEntry.notes !== 'guard_flex' ? avEntry.notes : '';
+  return `<div style="margin-top:6px">
+    <input type="text" id="off-note-${ds}" class="inp" placeholder="Note (optional)" value="${noteVal}" style="width:100%;max-width:260px;padding:3px 6px;font-size:.76rem" oninput="updateOff('${ds}')">
+  </div>`;
+}
+function showOffDetail(ds){
+  const container=document.getElementById(`avspecial-${ds}`);
+  if(!container)return;
+  container.innerHTML=renderOffDetail(ds, availChanges[ds]);
+}
+function updateOff(ds){
+  if(!availChanges[ds])return;
+  availChanges[ds].notes=document.getElementById(`off-note-${ds}`)?.value||'';
+  const n=Object.keys(availChanges).length;
+  ['avail-save-status','avail-save-status2'].forEach(id=>{
+    const el=document.getElementById(id);if(el)el.textContent=n?`${n} unsaved change${n!==1?'s':''}…`:'';
+  });
+}
+
 function updateSpecial(ds){
   if(!availChanges[ds]){
     // Guard editing times on an already-saved S_SPEC entry — create the pending change now
@@ -3190,10 +3538,27 @@ function updateSpecial(ds){
   });
 }
 
-function saveMyAvail(){
+function _availPolicyModal(saveFn){
+  return `
+    <div style="text-align:center;margin-bottom:4px">
+      <div style="font-size:2.4rem;line-height:1">⚠️</div>
+      <div style="font-family:'Barlow Condensed',sans-serif;font-size:1.35rem;font-weight:900;color:var(--coral);letter-spacing:.5px;margin-top:4px">COUNTY POLICY VIOLATION</div>
+    </div>
+    <div style="background:#fff5f5;border:1.5px solid var(--coral);border-radius:10px;padding:14px 16px;margin:14px 0;font-size:.88rem;line-height:1.6">
+      <strong>You have registered for more than 40 regular hours or more than 5 working days in a work week.</strong>
+      <div style="margin-top:8px;color:var(--text)">
+        Per county policy, guards must select <strong>at least 2 days off</strong> (Day Off or Flex Day Off) per work week (Saturday–Friday). You may work late shifts on top of your regular hours, but you must still take 2 days off each week.
+      </div>
+    </div>
+    <div style="font-size:.82rem;color:var(--muted);margin-bottom:16px;text-align:center">Do you want to go back and correct your availability, or save as-is anyway?</div>
+    <div class="modal-foot" style="justify-content:center;gap:12px">
+      <button class="btn btn-outline" onclick="closeModal()" style="min-width:140px">← Go Back and Edit</button>
+      <button class="btn" style="background:var(--coral);color:#fff;min-width:140px" onclick="closeModal();${saveFn}(true)">Save Anyway</button>
+    </div>`;
+}
+function saveMyAvail(force){
   const _vp=D.periods.find(p=>p.id===availViewPeriodId)||D.activePeriod;
   const _effMap=getEffectiveAvailMap(_vp,availChanges);
-  if(countRegularHrs(_effMap)>40){toast('Heads up: you have more than 40 regular hours set.','warn');}
   const entries=Object.values(availChanges);
   if(!entries.length){toast('No changes to save.','warn');return;}
 
@@ -3204,6 +3569,16 @@ function saveMyAvail(){
     const inEl=document.getElementById(`sp-in-${specNoTimes[0].date}`);
     if(inEl){inEl.style.outline='2px solid var(--coral)';inEl.focus();}
     return;
+  }
+
+  // Policy check — show blocking modal unless guard is overriding
+  if(!force){
+    const overHrs=Object.values(countRegularHrs(_effMap)).some(h=>h>40);
+    const overDays=Object.values(countWorkingDaysPerWeek(_effMap)).some(d=>d>5);
+    if(overHrs||overDays){
+      showModal(_availPolicyModal('saveMyAvail'));
+      return;
+    }
   }
 
   // Immediately disable ALL save buttons and show spinner
@@ -3415,7 +3790,7 @@ function renderFsPost(el){
     el.innerHTML='<div class="empty"><div class="ei">📭</div><p>No shifts published yet.</p></div>';
     return;
   }
-  const RANK_ORDER=['Lifeguard Supervisor','Crew Captain','Captain','Beach Captain','Lieutenant','Vet','Guard','Rookie','Replacement','Volunteer'];
+  const RANK_ORDER=['Lifeguard Supervisor','Crew Captain','Captain','Beach Captain','Lieutenant','Vet','Guard','Rookie','Replacement','Volunteer','Cadet'];
   const rankIdx=r=>RANK_ORDER.indexOf(r)<0?99:RANK_ORDER.indexOf(r);
 
   let th=`<tr><th style="background:var(--navy);color:#fff;padding:8px 10px;text-align:left;position:sticky;left:0;z-index:20;min-width:130px">Post / Guard</th>`;
@@ -3477,7 +3852,7 @@ function renderFsPost(el){
 
 function renderFsCondensed(el){
   const vp=getSchedPeriod(); if(!vp)return;
-  const RANK_ORDER=['Lifeguard Supervisor','Crew Captain','Captain','Beach Captain','Lieutenant','Vet','Guard','Rookie','Replacement','Volunteer'];
+  const RANK_ORDER=['Lifeguard Supervisor','Crew Captain','Captain','Beach Captain','Lieutenant','Vet','Guard','Rookie','Replacement','Volunteer','Cadet'];
   const rankIdx=r=>RANK_ORDER.indexOf(r)<0?99:RANK_ORDER.indexOf(r);
   const assigned=getSchedShifts().filter(s=>s.status!=='cancelled'&&s.assigned_guard_id);
   const today=ymd(new Date());
@@ -3621,7 +3996,10 @@ function offDayCard(av){
       <div class="sdate-num">${d.getDate()}</div>
       <div class="sdate-mo">${MONTHS[d.getMonth()]}</div>
     </div>
-    <div style="flex:1;font-weight:600;color:${isFlex?'#b45309':'#dc2626'}">${isFlex?'Flex Day Off':'Day Off'}</div>
+    <div style="flex:1">
+      <div style="font-weight:600;color:${isFlex?'#b45309':'#dc2626'}">${isFlex?'Flex Day Off':'Day Off'}</div>
+      ${av.notes&&av.notes!=='guard_flex'?`<div style="font-size:.75rem;color:var(--muted);margin-top:2px">${av.notes}</div>`:''}
+    </div>
   </div>`;
 }
 function shiftCards(shifts, hideStatus){
@@ -3864,7 +4242,7 @@ function showModal(h){document.getElementById('modal').innerHTML=h;document.getE
 function closeModal(){document.getElementById('overlay').classList.remove('on');}
 function overlayClick(e){if(e.target===document.getElementById('overlay'))closeModal();}
 
-const RANKS=['Lifeguard Supervisor','Crew Captain','Captain','Beach Captain','Lieutenant','Vet','Guard','Rookie','Replacement','Volunteer'];
+const RANKS=['Lifeguard Supervisor','Crew Captain','Captain','Beach Captain','Lieutenant','Vet','Guard','Rookie','Replacement','Volunteer','Cadet'];
 
 function showAddShiftModal(){
   if(!D.activePeriod){toast('No active period.','err');return;}
@@ -4031,7 +4409,7 @@ function showAddGuardModal(){
       <div class="fg"><label>Rank</label><select id="g-rank" class="sel">${RANKS.map(r=>`<option>${r}</option>`).join('')}</select></div>
     </div>
     <div class="row2">
-      <div class="fg"><label>Pay Rate ($/hr)</label><input type="number" id="g-rate" class="inp" step="0.01"></div>
+      <div class="fg"><label>Pay Rate ($/hr)</label><div style="position:relative;display:flex;align-items:center"><input type="password" id="g-rate" class="inp" inputmode="decimal" style="padding-right:36px"><button type="button" onclick="togglePayRate('g-rate','g-rate-eye')" id="g-rate-eye" style="position:absolute;right:8px;background:none;border:none;cursor:pointer;color:var(--muted);font-size:1rem;line-height:1;padding:4px" title="Show/hide pay rate">👁</button></div></div>
       <div class="fg"><label>Auth</label><select id="g-auth" class="sel" onchange="document.getElementById('g-pw-w').style.display=this.value==='password'?'block':'none'">
         <option value="google">Google</option><option value="password">Password</option>
       </select></div>
@@ -4062,15 +4440,24 @@ function showEditGuardModal(id){
       <div class="fg"><label>Phone</label><input type="tel" id="eg-phone" class="inp" value="${g.phone||''}"></div>
       <div class="fg"><label>Rank</label><select id="eg-rank" class="sel">${RANKS.map(r=>`<option${r===g.rank?' selected':''}>${r}</option>`).join('')}</select></div>
     </div>
-    <div class="fg"><label>Pay Rate ($/hr)</label><input type="number" id="eg-rate" class="inp" step="0.01" value="${g.pay_rate||''}"></div>
-    <div class="modal-foot"><button class="btn btn-outline" onclick="closeModal()">Cancel</button><button class="btn btn-navy" onclick="doUpdateGuard('${id}')">Save</button></div>`);
+    <div class="fg"><label>Pay Rate ($/hr)</label><div style="position:relative;display:flex;align-items:center"><input type="password" id="eg-rate" class="inp" inputmode="decimal" value="${g.pay_rate||''}" style="padding-right:36px"><button type="button" onclick="togglePayRate('eg-rate','eg-rate-eye')" id="eg-rate-eye" style="position:absolute;right:8px;background:none;border:none;cursor:pointer;color:var(--muted);font-size:1rem;line-height:1;padding:4px" title="Show/hide pay rate">👁</button></div></div>
+    <div class="row2">
+      <div class="fg"><label>Locker #</label><input type="text" id="eg-locker" class="inp" value="${g.locker_number||''}"></div>
+      <div class="fg"><label>Parking Pass #</label><input type="text" id="eg-parking" class="inp" value="${g.parking_pass||''}"></div>
+    </div>
+    <div class="modal-foot"><button class="btn btn-outline" onclick="closeModal()">Cancel</button><button id="eg-save-btn" class="btn btn-navy" onclick="doUpdateGuard('${id}')">Save</button></div>`);
 }
 function doUpdateGuard(id){
+  const btn=document.getElementById('eg-save-btn');
+  if(btn){btn.disabled=true;btn.innerHTML='<span class="spinner"></span> Saving…';}
   arun('clientUpdateGuard',r=>{
     if(r&&r.success){toast('Updated!','ok');closeModal();run('clientGetGuards',d=>{D.guards=d||[];R.guards();});}
+    else{if(btn){btn.disabled=false;btn.innerHTML='Save';}toast(r?.message||'Failed.','err');}
   },null,{id,name:document.getElementById('eg-name').value,email:document.getElementById('eg-email').value,
     phone:document.getElementById('eg-phone').value,rank:document.getElementById('eg-rank').value,
-    pay_rate:document.getElementById('eg-rate').value});
+    pay_rate:document.getElementById('eg-rate').value,
+    locker_number:document.getElementById('eg-locker').value,
+    parking_pass:document.getElementById('eg-parking').value});
 }
 function rankCheckboxes(selectedCSV){
   const sel=(selectedCSV||'').split(',').map(r=>r.trim()).filter(Boolean);
@@ -4364,6 +4751,7 @@ function mobGo(panel) {
 function showMobTabs() {
   const tabs = document.getElementById('mob-tabs');
   const sidebar = document.getElementById('sidebar');
+  const ham = document.querySelector('.hamburger');
   const isGuardMobile = !isTrueAdmin() && isMobile();
   if (tabs) tabs.style.display = isGuardMobile ? 'flex' : 'none';
   // Hide sidebar entirely for guards on mobile (they use bottom tabs)
@@ -4375,6 +4763,8 @@ function showMobTabs() {
       sidebar.classList.remove('guard-mobile');
     }
   }
+  // Guards use bottom tabs — no need for hamburger; admins (incl. View As Guard) keep it
+  if (ham) ham.style.display = isTrueAdmin() ? '' : 'none';
 }
 
 // ── BOTTOM SHEET ──────────────────────────────────
@@ -4399,8 +4789,12 @@ function renderMobGuardDash() {
     .sort((a,b) => a.date > b.date ? 1 : -1);
   const todayShifts = mine.filter(s => s.date === today);
   const upcoming = mine.filter(s => s.date >= today);
-  const _mobAllOff=[...(D.avail||[]),...(D.availNext||[])].filter(a=>
-    String(a.guard_id)===gid&&a.date>=today&&(a.status==='FIXED_OFF'||a.status==='FLEX_OFF'));
+  const _mobAllOffSeen=new Set();
+  const _mobAllOff=[...(D.avail||[]),...(D.availNext||[])].filter(a=>{
+    if(!(String(a.guard_id)===gid&&a.date>=today&&(a.status==='FIXED_OFF'||a.status==='FLEX_OFF')))return false;
+    if(_mobAllOffSeen.has(a.date))return false;
+    _mobAllOffSeen.add(a.date);return true;
+  });
   const _mobDashItems=[
     ...upcoming.map(s=>({_type:'shift',date:s.date,data:s})),
     ..._mobAllOff.map(a=>({_type:'off',date:a.date,data:a}))
@@ -4651,6 +5045,39 @@ function confirmMobSpecial(ds){
   closeBSheet();
 }
 
+function openOffNoteSheet(ds, status){
+  const pending=mobAvailChanges[ds]?.[0];
+  const noteVal=pending?.notes||'';
+  const d=new Date(ds+'T12:00:00');
+  const label=status==='FLEX_OFF'?'Flex Day Off':'Day Off';
+  openBSheet(`${DAYS[d.getDay()]}, ${MONTHS[d.getMonth()]} ${d.getDate()} — ${label}`,
+    `<div style="display:flex;flex-direction:column;gap:12px;margin-top:8px">
+       <label style="display:flex;flex-direction:column;gap:4px">
+         <span style="font-size:.78rem;color:var(--muted)">Note (optional)</span>
+         <input type="text" id="mob-off-note-${ds}" class="inp" placeholder="e.g. Doctor's appointment" value="${noteVal}" style="font-size:.9rem;padding:8px 10px">
+       </label>
+       <button class="btn btn-coral" onclick="confirmMobOff('${ds}')">✓ Done</button>
+       <button class="btn btn-ghost btn-sm" onclick="confirmMobOff('${ds}',true)" style="margin-top:4px">Skip (no note)</button>
+     </div>`
+  );
+}
+function confirmMobOff(ds, skipNote){
+  if(!skipNote){
+    const noteVal=document.getElementById(`mob-off-note-${ds}`)?.value||'';
+    if(mobAvailChanges[ds]?.[0]) mobAvailChanges[ds][0].notes=noteVal;
+  }
+  const status=mobAvailChanges[ds]?.[0]?.status;
+  const rows=document.getElementById('mob-av-list');
+  if(rows){
+    const row=rows.querySelector(`[onclick*="'${ds}'"]`);
+    if(row){const chip=row.querySelector('.g-av-chip');if(chip&&status){chip.className=`g-av-chip av-${status}`;chip.innerHTML=AV_LABELS[status];}}
+  }
+  const statusEl=document.getElementById('mob-av-status');
+  if(statusEl)statusEl.textContent=`${Object.keys(mobAvailChanges).length} unsaved change${Object.keys(mobAvailChanges).length!==1?'s':''}`;
+  updateMobAvailHoursCounter();
+  closeBSheet();
+}
+
 function setMobAvail(ds, status) {
   const gid = String(myId());
   const existing = getAvailView().find(a => String(a.guard_id)===gid && a.date===ds);
@@ -4660,6 +5087,15 @@ function setMobAvail(ds, status) {
     // Pre-set the pending entry so openSpecialTimeSheet can read it
     mobAvailChanges[ds]=[{guard_id:gid,date:ds,status:'S_SPEC',custom_start:existing?.custom_start||'',custom_end:existing?.custom_end||'',ot_willing:false,notes:existing?.notes||''}];
     openSpecialTimeSheet(ds);
+    return;
+  }
+
+  // Day Off / Flex Day Off — open note sheet (note is optional)
+  if(status==='FIXED_OFF'||status==='FLEX_OFF'){
+    const existingNote=existing?.notes&&existing.notes!=='guard_flex'?existing.notes:'';
+    const pendingNote=mobAvailChanges[ds]?.[0]?.notes||existingNote;
+    mobAvailChanges[ds]=[{guard_id:gid,date:ds,status,custom_start:'',custom_end:'',ot_willing:false,notes:pendingNote}];
+    openOffNoteSheet(ds,status);
     return;
   }
 
@@ -4689,10 +5125,9 @@ function setMobAvail(ds, status) {
   closeBSheet();
 }
 
-function saveMobAvail() {
+function saveMobAvail(force) {
   const _vp=D.periods.find(p=>p.id===availViewPeriodId)||D.activePeriod;
   const _effMap=getEffectiveAvailMap(_vp,mobAvailChanges);
-  if(countRegularHrs(_effMap)>40){toast('Heads up: you have more than 40 regular hours set.','warn');}
   const allEntries = Object.values(mobAvailChanges).flat();
   if (!allEntries.length) { toast('No changes to save.','warn'); return; }
 
@@ -4701,6 +5136,16 @@ function saveMobAvail() {
   if(_specNoTimes.length){
     toast('Special availability requires a start and finish time — tap the Special row to add times.','err');
     return;
+  }
+
+  // Policy check — show blocking modal unless guard is overriding
+  if(!force){
+    const overHrs=Object.values(countRegularHrs(_effMap)).some(h=>h>40);
+    const overDays=Object.values(countWorkingDaysPerWeek(_effMap)).some(d=>d>5);
+    if(overHrs||overDays){
+      showModal(_availPolicyModal('saveMobAvail'));
+      return;
+    }
   }
 
   const btn = document.querySelector('[onclick="saveMobAvail()"]');
@@ -4928,6 +5373,7 @@ function mobOffDayCard(av) {
       </div>
       <div class="g-shift-info">
         <div style="font-weight:700;color:${isFlex?'#b45309':'#dc2626'}">${isFlex?'Flex Day Off':'Day Off'}</div>
+        ${av.notes&&av.notes!=='guard_flex'?`<div style="font-size:.78rem;color:var(--muted);margin-top:2px">${av.notes}</div>`:''}
       </div>
     </div>
   </div>`;
@@ -5083,7 +5529,7 @@ function renderClockWidget(el) {
       <button class="clock-btn ${ci?'out':'in'}" onclick="doClockAction()" id="clock-action-btn">
         ${ci ? '🔴 Clock Out' : '🟢 Clock In'}
       </button>
-      ${ci ? `<div style="margin-top:10px"><button class="btn btn-outline btn-sm" style="color:rgba(255,255,255,.7);border-color:rgba(255,255,255,.25);width:100%" onclick="go('time')">View Time Records</button></div>` : ''}
+      ${ci ? `<div style="margin-top:10px"><button class="btn btn-outline btn-sm" style="color:rgba(255,255,255,.7);border-color:rgba(255,255,255,.25);background:transparent;width:100%" onclick="go('time')">View Time Records</button></div>` : ''}
     </div>`;
 
   if (ci && rec) startWidgetClock(rec.clock_in);
@@ -5186,12 +5632,26 @@ function startWidgetClock(clockInISO) {
 
 // ── CURRENTLY CLOCKED IN CARD (admin dashboard) ──────────────
 let _ciCardInterval = null;
+let _dashCardRecords = {}; // keyed by record id, for dashboard edit modals
+
+function loadDashStatsCount() {
+  const pid = D.activePeriod ? D.activePeriod.id : null;
+  arun('clientGetAllShiftStats', stats => {
+    const chip = document.getElementById('dash-stats-count');
+    if (!chip) return;
+    const today = ymd(new Date());
+    const count = (stats || []).filter(s => s.date === today).length;
+    chip.textContent = count;
+  }, null, pid);
+}
 
 function loadClockedInCard() {
   arun('clientGetAllClockedIn', records => {
     if (_ciCardInterval) { clearInterval(_ciCardInterval); _ciCardInterval = null; }
     const el = document.getElementById('clocked-in-body');
     if (!el) return;
+    const ciChip = document.getElementById('dash-clocked-in-count');
+    if (ciChip) ciChip.textContent = records ? records.length : 0;
     if (!records || !records.length) {
       el.innerHTML = `<span class="muted">No guards currently clocked in.</span>`;
       return;
@@ -5204,11 +5664,13 @@ function loadClockedInCard() {
         const elapsed = `${h}:${String(m).padStart(2,'0')}`;
         const locHtml = fmtLocLink(r.clock_in_lat, r.clock_in_lng, r.clock_in_location, 'in');
         const rowBg = i % 2 === 0 ? 'var(--foam)' : '#fff';
+        const safeName = (r.guard_name||'').replace(/\\/g,'\\\\').replace(/'/g,"\\'");
         return `<tr style="background:${rowBg}">
           <td style="font-weight:600">${r.guard_name||'—'}</td>
           <td>${fmtISOTime(r.clock_in)}</td>
           <td>${locHtml||'<span class="muted">—</span>'}</td>
           <td style="font-variant-numeric:tabular-nums" data-ci="${r.clock_in}">${elapsed}</td>
+          <td><button class="btn btn-sm" style="background:#ef4444;color:#fff;padding:4px 10px;font-size:.78rem" onclick="showAdminClockOutModal('${r.guard_id}','${safeName}','${r.clock_in}')">Clock Out</button></td>
         </tr>`;
       }).join('');
     };
@@ -5218,6 +5680,7 @@ function loadClockedInCard() {
         <th style="padding:4px 8px">Clocked In</th>
         <th style="padding:4px 8px">Location</th>
         <th style="padding:4px 8px">Elapsed</th>
+        <th style="padding:4px 8px">Action</th>
       </tr></thead>
       <tbody id="ci-rows">${renderRows()}</tbody>
     </table>`;
@@ -5239,11 +5702,14 @@ function loadClockedOutCard() {
   arun('clientGetClockedOutToday', records => {
     const el = document.getElementById('clocked-out-body');
     if (!el) return;
+    const coChip = document.getElementById('dash-clocked-out-count');
+    if (coChip) coChip.textContent = records ? records.length : 0;
     if (!records || !records.length) {
       el.innerHTML = `<span class="muted">No guards have clocked out today.</span>`;
       return;
     }
     const fmtMins = m => { const h=Math.floor(m/60),mn=m%60; return `${h}:${String(mn).padStart(2,'0')}`; };
+    records.forEach(r => { _dashCardRecords[r.id] = r; });
     const rows = records.map((r, i) => {
       const rawMins = r.clock_in && r.clock_out
         ? Math.max(0, Math.round((new Date(r.clock_out)-new Date(r.clock_in))/60000) - (parseInt(r.break_minutes)||0))
@@ -5264,6 +5730,7 @@ function loadClockedOutCard() {
         <td style="font-variant-numeric:tabular-nums">${fmtMins(rawMins)}</td>
         <td style="font-variant-numeric:tabular-nums">${fmtMins(rndMins)}</td>
         ${editedCell}
+        <td><button class="btn btn-outline btn-xs" style="font-size:.75rem;padding:3px 8px" onclick="showAdminEditTimeRecord('${r.id}','loadClockedOutCard')">Edit</button></td>
       </tr>`;
     }).join('');
     el.innerHTML = `<div style="overflow-x:auto;-webkit-overflow-scrolling:touch">
@@ -5277,6 +5744,7 @@ function loadClockedOutCard() {
           <th style="padding:4px 8px">Actual Hrs</th>
           <th style="padding:4px 8px">Recorded Hrs</th>
           <th style="padding:4px 8px">Edited At</th>
+          <th style="padding:4px 8px">Action</th>
         </tr></thead>
         <tbody>${rows}</tbody>
       </table>
@@ -5294,6 +5762,7 @@ function loadYesterdayCard() {
       return;
     }
     const fmtMins = m => { const h=Math.floor(m/60),mn=m%60; return `${h}:${String(mn).padStart(2,'0')}`; };
+    records.forEach(r => { _dashCardRecords[r.id] = r; });
     const rows = records.map((r, i) => {
       const rawMins = r.clock_in && r.clock_out
         ? Math.max(0, Math.round((new Date(r.clock_out)-new Date(r.clock_in))/60000) - (parseInt(r.break_minutes)||0))
@@ -5314,6 +5783,7 @@ function loadYesterdayCard() {
         <td style="font-variant-numeric:tabular-nums">${fmtMins(rawMins)}</td>
         <td style="font-variant-numeric:tabular-nums">${fmtMins(rndMins)}</td>
         ${editedCell}
+        <td><button class="btn btn-outline btn-xs" style="font-size:.75rem;padding:3px 8px" onclick="showAdminEditTimeRecord('${r.id}','loadYesterdayCard')">Edit</button></td>
       </tr>`;
     }).join('');
     el.innerHTML = `<div style="overflow-x:auto;-webkit-overflow-scrolling:touch">
@@ -5327,6 +5797,7 @@ function loadYesterdayCard() {
           <th style="padding:4px 8px">Actual Hrs</th>
           <th style="padding:4px 8px">Recorded Hrs</th>
           <th style="padding:4px 8px">Edited At</th>
+          <th style="padding:4px 8px">Action</th>
         </tr></thead>
         <tbody>${rows}</tbody>
       </table>
@@ -5440,8 +5911,24 @@ function loadMyTimeRecords(periodId) {
       : records;
     const ppMins = periodRecs.reduce((s,r)=>s+roundedMins(r),0);
     const ppHrs  = ppMins / 60;
-    const periodReg = Math.min(ppHrs, 40);
-    const periodOT  = Math.max(0, ppHrs - 40);
+
+    // OT is per Sat-Fri work week, not per pay period
+    const ppWeeks = {};
+    periodRecs.forEach(r => {
+      const d = new Date(r.date+'T12:00:00');
+      const day = d.getDay();
+      const diff = day === 6 ? 0 : -(day + 1);
+      const sat = new Date(d); sat.setDate(d.getDate() + diff);
+      const wk = ymd(sat);
+      if (!ppWeeks[wk]) ppWeeks[wk] = [];
+      ppWeeks[wk].push(r);
+    });
+    let periodOT = 0;
+    Object.values(ppWeeks).forEach(wkRecs => {
+      const wkMins = wkRecs.reduce((s,r)=>s+roundedMins(r),0);
+      periodOT += Math.max(0, wkMins/60 - 40);
+    });
+    const periodReg = ppHrs - periodOT;
 
     const weekBlocks = Object.keys(weeks).sort().map(wk => { // oldest week first
       const { sat, records: wkRecs } = weeks[wk];
@@ -5780,6 +6267,7 @@ function confirmClockOut() {
         } else {
           CLOCK_STATUS = { clocked_in: false, record: null };
           toast(`Clocked out — ${hrs}h recorded 👋`, 'ok');
+          loadPendingStats();
           if (PANEL === 'time') renderTimePage(document.getElementById('content'));
           else refreshClockWidget();
         }
@@ -5800,6 +6288,133 @@ function confirmClockOut() {
 }
 
 
+// ── ADMIN: Force clock out a currently-clocked-in guard ──
+function showAdminClockOutModal(guardId, guardName, clockInISO) {
+  const now = new Date();
+  const nowVal = now.toTimeString().slice(0,5);
+  const cinVal = clockInISO ? new Date(clockInISO).toTimeString().slice(0,5) : '';
+  showModal(`<div class="modal-title">🔴 Clock Out — ${guardName}</div>
+    <p class="muted" style="font-size:.8rem;margin-bottom:12px">Adjust times if needed before saving.</p>
+    <div class="row2">
+      <div class="fg">
+        <label>Clock-In Time</label>
+        <input type="time" id="co-in" class="inp" value="${cinVal}">
+      </div>
+      <div class="fg">
+        <label>Clock-Out Time</label>
+        <input type="time" id="co-time" class="inp" value="${nowVal}">
+      </div>
+    </div>
+    <div class="fg">
+      <label>Break Taken (minutes) <span class="muted" style="font-weight:400">(leave blank = auto)</span></label>
+      <input type="number" id="co-break" class="inp" value="" placeholder="Leave blank = auto">
+    </div>
+    <div class="fg">
+      <label>Notes (optional)</label>
+      <input type="text" id="co-notes" class="inp" placeholder="e.g. Left early for training">
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-outline" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-coral" id="admin-co-confirm" onclick="confirmAdminClockOut('${guardId}','${guardName.replace(/'/g,"\\'")}','${clockInISO}')">Confirm Clock Out</button>
+    </div>`);
+}
+
+function confirmAdminClockOut(guardId, guardName, origClockInISO) {
+  const inVal    = document.getElementById('co-in')?.value;
+  const timeVal  = document.getElementById('co-time')?.value;
+  const breakVal = document.getElementById('co-break')?.value;
+  const notes    = document.getElementById('co-notes')?.value || '';
+  if (!timeVal) { toast('Clock-out time is required.','err'); return; }
+
+  const now = new Date();
+  let clockOutOverride = null;
+  if (timeVal) {
+    const [h,m] = timeVal.split(':').map(Number);
+    const d = new Date(now); d.setHours(h, m, 0, 0);
+    clockOutOverride = d.toISOString();
+  }
+  let clockInOverride = null;
+  if (inVal && origClockInISO) {
+    const origInVal = new Date(origClockInISO).toTimeString().slice(0,5);
+    if (inVal !== origInVal) {
+      const [h,m] = inVal.split(':').map(Number);
+      const d = new Date(origClockInISO); d.setHours(h, m, 0, 0);
+      clockInOverride = d.toISOString();
+    }
+  }
+  const btn = document.getElementById('admin-co-confirm');
+  if (btn) { btn.disabled = true; btn.textContent = 'Saving…'; }
+
+  run('clientClockOut', r => {
+    closeModal();
+    if (r && r.success) {
+      const hrs = ((r.rounded_minutes !== undefined ? r.rounded_minutes : r.total_minutes) / 60).toFixed(2);
+      toast(`Clocked out ${guardName} — ${hrs}h recorded`, 'ok');
+      loadClockedInCard();
+      loadClockedOutCard();
+    } else {
+      toast(r?.message || 'Clock-out failed.', 'err');
+    }
+  }, null, {
+    clock_in_override: clockInOverride,
+    clock_out_override: clockOutOverride,
+    break_minutes: breakVal !== '' ? parseInt(breakVal)||0 : undefined,
+    notes,
+    target_guard_id: guardId,
+    token: S?.token
+  });
+}
+
+// ── ADMIN: Edit a completed time record from a dashboard card ──
+function showAdminEditTimeRecord(id, refreshFn) {
+  const r = _dashCardRecords[id];
+  if (!r) { toast('Record not found.', 'err'); return; }
+  const cin  = r.clock_in  ? new Date(r.clock_in).toTimeString().slice(0,5)  : '';
+  const cout = r.clock_out ? new Date(r.clock_out).toTimeString().slice(0,5) : '';
+  showModal(`<div class="modal-title">✏️ Edit Time Record</div>
+    <div style="font-size:.82rem;color:var(--muted);margin-bottom:12px">${fd(r.date)} · ${r.guard_name||r.guard_id}</div>
+    <div class="row2">
+      <div class="fg"><label>Clock In</label><input type="time" id="etr-in" class="inp" value="${cin}"></div>
+      <div class="fg"><label>Clock Out</label><input type="time" id="etr-out" class="inp" value="${cout}"></div>
+    </div>
+    <div class="fg"><label>Break (minutes)</label><input type="number" id="etr-break" class="inp" value="${parseInt(r.break_minutes)||0}"></div>
+    <div class="fg"><label>Notes</label><input type="text" id="etr-notes" class="inp" value="${(r.notes||'').replace(/"/g,'&quot;')}"></div>
+    <div class="modal-foot">
+      <button class="btn btn-outline" onclick="closeModal()">Cancel</button>
+      <button id="dash-etr-save-btn" class="btn btn-navy" onclick="saveAdminEditTimeRecord('${id}','${r.date}','${refreshFn}')">Save</button>
+    </div>`);
+}
+
+function saveAdminEditTimeRecord(id, dateStr, refreshFn) {
+  const inVal    = document.getElementById('etr-in')?.value;
+  const outVal   = document.getElementById('etr-out')?.value;
+  const breakVal = parseInt(document.getElementById('etr-break')?.value)||0;
+  const notes    = document.getElementById('etr-notes')?.value||'';
+  const btn      = document.getElementById('dash-etr-save-btn');
+
+  function toISO(timeStr) {
+    if (!timeStr) return '';
+    const [h,m] = timeStr.split(':').map(Number);
+    const d = new Date(dateStr+'T12:00:00');
+    d.setHours(h,m,0,0);
+    return d.toISOString();
+  }
+
+  if (btn) { btn.disabled = true; btn.textContent = 'Saving…'; }
+
+  arun('clientEditTimeRecord', res => {
+    if (res && res.success) {
+      closeModal();
+      toast('Record updated.', 'ok');
+      if (refreshFn === 'loadYesterdayCard') loadYesterdayCard();
+      else loadClockedOutCard();
+    } else {
+      toast(res?.message || 'Save failed.', 'err');
+      if (btn) { btn.disabled = false; btn.textContent = 'Save'; }
+    }
+  }, null, { id, clock_in: toISO(inVal), clock_out: toISO(outVal), break_minutes: breakVal, notes });
+}
+
 // ════════════════════════════════════════
 // ADMIN: TIME RECORDS
 // ════════════════════════════════════════
@@ -5811,6 +6426,7 @@ R['time-records'] = function() {
 
   document.getElementById('topbar-actions').innerHTML=`
     <button class="btn btn-outline btn-sm" onclick="exportTimeCSV()">📥 Export CSV</button>
+    <button class="btn btn-outline btn-sm" onclick="exportPayrollUpdateCSV(this)">📊 Payroll Update</button>
     <button class="btn btn-coral btn-sm" onclick="lockPeriodTime()">🔒 Lock All & Close Period</button>`;
 
   el.innerHTML=`
@@ -5829,8 +6445,17 @@ R['time-records'] = function() {
 
 let _allTimeRecords = [];
 let _trDrillGuard = null; // currently drilled-in guard ID
+let _trPeriodId = null;   // currently displayed period
+let trSortCol = 'rank', trSortDir = 1;
+
+function sortTimeRecords(col) {
+  if (trSortCol === col) { trSortDir *= -1; }
+  else { trSortCol = col; trSortDir = 1; }
+  renderAdminTimeSummary();
+}
 
 function loadAdminTimeRecords(periodId) {
+  _trPeriodId = periodId;
   const p = D.periods.find(x => x.id === periodId);
   const due = document.getElementById('tr-payroll-due');
   if (due && p) due.innerHTML = `Payroll due: <strong>${fd(p.time_report_due)||'—'}</strong>`;
@@ -5871,19 +6496,34 @@ function renderAdminTimeSummary() {
     return;
   }
 
-  // Sort guards by rank then name
-  const RANK_ORDER=['Lifeguard Supervisor','Crew Captain','Captain','Beach Captain','Lieutenant','Vet','Guard','Rookie','Replacement','Volunteer'];
-  const sorted = Object.values(byGuard).sort((a,b)=>{
-    const ri = r => RANK_ORDER.indexOf(r?.guard?.rank??'')===- 1?99:RANK_ORDER.indexOf(r?.guard?.rank??'');
-    return ri(a)-ri(b) || (a.guard?.name||'').localeCompare(b.guard?.name||'');
+  // Pre-compute hours per guard (once), then sort
+  const RANK_ORDER=['Lifeguard Supervisor','Crew Captain','Captain','Beach Captain','Lieutenant','Vet','Guard','Rookie','Replacement','Volunteer','Cadet'];
+  const sorted = Object.values(byGuard).map(item => {
+    const wkMap = weeklyOTRecords(item.records);
+    let gTotal=0, gReg=0, gOT=0;
+    Object.values(wkMap).forEach(w=>{ gTotal+=w.total; gReg+=w.reg; gOT+=w.ot; });
+    return { ...item, gTotal, gReg, gOT };
+  }).sort((a,b)=>{
+    let av, bv;
+    if (trSortCol==='name')   { av=(a.guard?.name||'').toLowerCase(); bv=(b.guard?.name||'').toLowerCase(); }
+    else if (trSortCol==='rank')  { av=RANK_ORDER.indexOf(a.guard?.rank??''); bv=RANK_ORDER.indexOf(b.guard?.rank??''); if(av<0)av=99; if(bv<0)bv=99; }
+    else if (trSortCol==='days')  { av=a.records.length; bv=b.records.length; }
+    else if (trSortCol==='reg')   { av=a.gReg;   bv=b.gReg; }
+    else if (trSortCol==='ot')    { av=a.gOT;    bv=b.gOT; }
+    else if (trSortCol==='total') { av=a.gTotal;  bv=b.gTotal; }
+    else if (trSortCol==='status') {
+      const sc = x => (x.records.some(r=>r.status==='open')?8:0)+(x.records.some(r=>r.auto_clocked_out==='true')?4:0)+(x.records.some(r=>r.edited==='true')?2:0)+(x.records.length>0&&x.records.every(r=>r.locked==='true')?1:0);
+      av=sc(a); bv=sc(b);
+    }
+    if (av===undefined) { av=RANK_ORDER.indexOf(a.guard?.rank??''); bv=RANK_ORDER.indexOf(b.guard?.rank??''); if(av<0)av=99; if(bv<0)bv=99; }
+    if (av<bv) return -trSortDir;
+    if (av>bv) return  trSortDir;
+    return (a.guard?.name||'').localeCompare(b.guard?.name||'');
   });
 
-  // Period totals
+  // Period totals from pre-computed values
   let pTotal=0, pReg=0, pOT=0;
-  sorted.forEach(({records})=>{
-    const wkMap = weeklyOTRecords(records);
-    Object.values(wkMap).forEach(w=>{ pTotal+=w.total; pReg+=w.reg; pOT+=w.ot; });
-  });
+  sorted.forEach(({gTotal, gReg, gOT})=>{ pTotal+=gTotal; pReg+=gReg; pOT+=gOT; });
 
   el.innerHTML = `
     <!-- Period summary bar -->
@@ -5905,18 +6545,14 @@ function renderAdminTimeSummary() {
     <div class="card" style="padding:0;overflow:hidden">
       <table class="tbl">
         <thead><tr>
-          <th>Guard</th><th>Rank</th><th>Days</th>
-          <th style="text-align:right">Regular</th>
-          <th style="text-align:right">OT</th>
-          <th style="text-align:right">Total</th>
-          <th style="text-align:right">Status</th>
+          ${(()=>{
+            const thS=(col,label,align)=>{const active=trSortCol===col;const arrow=active?(trSortDir===1?'▲':'▼'):'';return`<th style="cursor:pointer;user-select:none;white-space:nowrap${active?';color:var(--wave)':''}${align?';text-align:'+align:''}" onclick="sortTimeRecords('${col}')">${label}${arrow?` <span style="font-size:.7rem">${arrow}</span>`:'&nbsp;↕'}</th>`;};
+            return thS('name','Guard')+thS('rank','Rank')+thS('days','Days')+thS('reg','Regular','right')+thS('ot','OT','right')+thS('total','Total','right')+thS('status','Status','right');
+          })()}
         </tr></thead>
         <tbody>
-          ${sorted.map(({guard, records}) => {
+          ${sorted.map(({guard, records, gTotal, gReg, gOT}) => {
             const rc = RC[guard?.rank]||'#94a3b8';
-            const wkMap = weeklyOTRecords(records);
-            let gTotal=0, gReg=0, gOT=0;
-            Object.values(wkMap).forEach(w=>{ gTotal+=w.total; gReg+=w.reg; gOT+=w.ot; });
             const hasOpen    = records.some(r=>r.status==='open');
             const hasEdited  = records.some(r=>r.edited==='true');
             const allLocked  = records.length>0 && records.every(r=>r.locked==='true');
@@ -6294,6 +6930,7 @@ function lockPeriodTime() {
 }
 
 function exportTimeCSV() {
+  const pid = _trPeriodId || D.activePeriod?.id;
   arun('clientExportTimeRecordsCSV', r => {
     if (!r||!r.success) { toast('Export failed.','err'); return; }
     const blob = new Blob([r.csv], {type:'text/csv'});
@@ -6302,7 +6939,28 @@ function exportTimeCSV() {
     a.href = url; a.download = `time_records_${r.period}.csv`; a.click();
     URL.revokeObjectURL(url);
     toast('CSV downloaded!','ok');
-  }, null, D.activePeriod?.id);
+  }, null, pid);
+}
+
+function exportPayrollUpdateCSV(btn) {
+  const pid = _trPeriodId || D.activePeriod?.id;
+  const p = D.periods.find(x => x.id === pid);
+  if (!p || !p.payroll_due) {
+    toast('No payroll due date set for this period.','err'); return;
+  }
+  const origLabel = btn ? btn.innerHTML : '';
+  if (btn) { btn.disabled = true; btn.innerHTML = '<span class="spinner"></span> Generating…'; }
+  const restore = () => { if (btn) { btn.disabled = false; btn.innerHTML = origLabel; } };
+  arun('clientExportPayrollUpdateCSV', r => {
+    restore();
+    if (!r||!r.success) { toast(r?.message||'Export failed.','err'); return; }
+    const blob = new Blob([r.csv], {type:'text/csv'});
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement('a');
+    a.href = url; a.download = `payroll_update_${r.period}.csv`; a.click();
+    URL.revokeObjectURL(url);
+    toast(`Payroll update: ${r.row_count} change${r.row_count===1?'':'s'} exported.`, r.row_count > 0 ? 'ok' : 'warn');
+  }, e => { restore(); toast('Export failed: ' + (e?.message||e||'unknown error'), 'err'); }, pid);
 }
 
 
@@ -6321,12 +6979,24 @@ const WEATHER_OPTIONS = ['Sunny','Cloudy','Showers','Thunder/Lightning','Foggy']
 const FLAG_OPTIONS    = ['Green','Yellow','Yellow/Red','Red'];
 
 // ── Load pending stats alerts ─────────────────────────────────
+const _STATS_SNOOZE_KEY = 'sts_stats_snooze';
+function _loadSnoozePersisted() {
+  try { return JSON.parse(localStorage.getItem(_STATS_SNOOZE_KEY)||'{}'); } catch(e) { return {}; }
+}
+function _saveSnoozePersisted(obj) {
+  try { localStorage.setItem(_STATS_SNOOZE_KEY, JSON.stringify(obj)); } catch(e) {}
+}
+
 function loadPendingStats(cb) {
   runG('clientGetPendingStatsAlerts', r => {
+    // Merge persisted snooze/dismiss into SNOOZED_STATS so they survive page reloads
+    const persisted = _loadSnoozePersisted();
+    Object.assign(SNOOZED_STATS, persisted);
+    const today = ymd(new Date());
     PENDING_STATS = (r||[]).filter(rec => {
       const snooze = SNOOZED_STATS[rec.id];
       if (!snooze) return true;
-      return snooze <= ymd(new Date()); // snooze expired
+      return snooze <= today; // snooze expired
     });
     if (cb) cb();
     refreshStatsAlerts();
@@ -6334,10 +7004,11 @@ function loadPendingStats(cb) {
 }
 
 function refreshStatsAlerts() {
-  // Re-render dashboard alerts if on dashboard
   if (PANEL === 'dashboard') {
     const el = document.getElementById('content');
     if (el) { if (isAdmin()) R.dashboard(); else renderGuardDash(el); }
+  } else if (PANEL === 'stats') {
+    R['stats']();
   }
 }
 
@@ -6369,14 +7040,15 @@ function snoozeStats(timeRecordId) {
   const tomorrow = ymd(new Date(Date.now() + 86400000));
   SNOOZED_STATS[timeRecordId] = tomorrow;
   PENDING_STATS = PENDING_STATS.filter(r => r.id !== timeRecordId);
+  const p = _loadSnoozePersisted(); p[timeRecordId] = tomorrow; _saveSnoozePersisted(p);
   refreshStatsAlerts();
   toast('Snoozed until tomorrow.','warn');
 }
 
 function dismissStats(timeRecordId) {
-  // Permanent dismiss — store a far-future date
   SNOOZED_STATS[timeRecordId] = '2099-12-31';
   PENDING_STATS = PENDING_STATS.filter(r => r.id !== timeRecordId);
+  const p = _loadSnoozePersisted(); p[timeRecordId] = '2099-12-31'; _saveSnoozePersisted(p);
   refreshStatsAlerts();
 }
 
@@ -6631,8 +7303,7 @@ let _adminStatsDate = null;
 let _adminStatsData = null;
 
 R['stats-admin'] = function() {
-  const yesterday = ymd(new Date(Date.now() - 86400000));
-  if (!_adminStatsDate) _adminStatsDate = yesterday;
+  if (!_adminStatsDate) _adminStatsDate = ymd(new Date());
 
   document.getElementById('topbar-actions').innerHTML =
     `<button class="btn btn-outline btn-sm" onclick="exportStatsCSV()">📥 Export CSV</button>`;
@@ -6737,16 +7408,20 @@ function renderAdminStatsPage() {
       }).join('')
     : '<div style="color:var(--muted);font-size:.82rem;padding:4px 0">All caught up ✓</div>';
 
-  const todayGuardsHtml = (d.todayGuards || []).length
-    ? `<div style="margin-top:8px;font-size:.78rem;color:var(--muted)">${d.todayGuards.join(', ')}</div>` : '';
+  const submittedCount = (d.statsForDate || []).length;
+  const submittedGuards = (d.statsForDate || []).map(s => s.guard_name || s.guard_id);
+  const submittedGuardsHtml = submittedGuards.length
+    ? `<div style="margin-top:8px;font-size:.78rem;color:var(--muted)">${submittedGuards.join(', ')}</div>` : '';
+  const submittedTitle = d.date === today ? 'Submitted Today' : 'Submitted';
+  const submittedSub = d.date === today ? `stat card${submittedCount !== 1 ? 's' : ''} so far` : `stat card${submittedCount !== 1 ? 's' : ''}`;
 
   const todaySection = `
     <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:12px">
       <div class="card" style="padding:16px">
-        <div class="card-title">Submitted Today</div>
-        <div style="font-family:'Barlow Condensed',sans-serif;font-size:2rem;font-weight:800;color:var(--wave)">${d.todayCount}</div>
-        <div style="font-size:.75rem;color:var(--muted)">stat card${d.todayCount !== 1 ? 's' : ''} so far</div>
-        ${todayGuardsHtml}
+        <div class="card-title">${submittedTitle}</div>
+        <div style="font-family:'Barlow Condensed',sans-serif;font-size:2rem;font-weight:800;color:var(--wave)">${submittedCount}</div>
+        <div style="font-size:.75rem;color:var(--muted)">${submittedSub}</div>
+        ${submittedGuardsHtml}
       </div>
       <div class="card" style="padding:16px">
         <div class="card-title" style="color:var(--coral)">Clocked Out, No Card</div>
