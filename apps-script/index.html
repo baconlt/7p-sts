@@ -448,6 +448,24 @@ body{font-family:'Barlow',sans-serif;background:var(--foam);color:var(--text);mi
 .tide-row-time{font-weight:700;font-size:.9rem;}
 .tide-row-sub{font-size:.77rem;color:var(--muted);}
 .tide-row-ht{font-family:'Barlow Condensed',sans-serif;font-size:1.05rem;font-weight:700;color:var(--navy);}
+
+/* ── EASTER EGG: Seven Presidents modal ── */
+#seven-pres-backdrop{display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:10000;align-items:center;justify-content:center;padding:16px;}
+#seven-pres-backdrop.sp-open{display:flex;animation:sp-fade .25s ease;}
+@keyframes sp-fade{from{opacity:0}to{opacity:1}}
+#seven-pres-modal{background:#fff;border-radius:16px;width:480px;max-width:100%;max-height:90vh;overflow-y:auto;box-shadow:0 24px 64px rgba(0,0,0,.35);animation:su .25s ease;position:relative;}
+.sp-header{background:linear-gradient(135deg,var(--navy),var(--ocean));border-radius:16px 16px 0 0;padding:22px 24px 18px;color:#fff;}
+.sp-header h2{font-family:'Barlow Condensed',sans-serif;font-size:1.55rem;font-weight:800;letter-spacing:1px;margin:0;}
+.sp-header p{font-size:.78rem;color:var(--sky);margin-top:4px;letter-spacing:.5px;text-transform:uppercase;}
+.sp-close{position:absolute;top:14px;right:16px;background:rgba(255,255,255,.15);border:none;color:#fff;width:28px;height:28px;border-radius:50%;font-size:1rem;line-height:1;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:background .15s;}
+.sp-close:hover{background:rgba(255,255,255,.3);}
+.sp-list{padding:16px 20px 20px;}
+.sp-item{display:flex;gap:12px;padding:12px 0;border-bottom:1px solid var(--border);}
+.sp-item:last-child{border-bottom:none;}
+.sp-num{font-family:'Barlow Condensed',sans-serif;font-size:1.3rem;font-weight:800;color:var(--sky);min-width:28px;padding-top:1px;}
+.sp-info{}
+.sp-name{font-family:'Barlow Condensed',sans-serif;font-size:1rem;font-weight:800;color:var(--navy);letter-spacing:.3px;}
+.sp-fact{font-size:.82rem;color:var(--muted);margin-top:3px;line-height:1.4;}
 </style>
 </head>
 <body>
@@ -514,7 +532,7 @@ body{font-family:'Barlow',sans-serif;background:var(--foam);color:var(--text);mi
   </div>
   <nav class="sidebar" id="sidebar">
     <div class="sb-head">
-      <div class="sb-logo">7P <span>STS</span></div>
+      <div class="sb-logo" id="sb-logo">7P <span>STS</span></div>
       <div class="sb-user">
         <div class="sb-name" id="sb-name">—</div>
         <div class="sb-rank" id="sb-rank">—</div>
@@ -532,6 +550,26 @@ body{font-family:'Barlow',sans-serif;background:var(--foam);color:var(--text);mi
       <div class="topbar-actions" id="topbar-actions"></div>
     </div>
     <div class="content" id="content"></div>
+  </div>
+</div>
+
+<!-- ── EASTER EGG: Seven Presidents modal ── -->
+<div id="seven-pres-backdrop" onclick="spBackdropClick(event)">
+  <div id="seven-pres-modal" role="dialog" aria-modal="true" aria-label="The Seven Presidents">
+    <div class="sp-header">
+      <button class="sp-close" onclick="spClose()" aria-label="Close">✕</button>
+      <h2>🌊 The Seven Presidents</h2>
+      <p>Presidents who shaped Long Branch, NJ</p>
+    </div>
+    <div class="sp-list">
+      <div class="sp-item"><div class="sp-num">1</div><div class="sp-info"><div class="sp-name">Ulysses S. Grant</div><div class="sp-fact">Made Long Branch his "Summer Capital," spending every summer there from 1869–1885.</div></div></div>
+      <div class="sp-item"><div class="sp-num">2</div><div class="sp-info"><div class="sp-name">Rutherford B. Hayes</div><div class="sp-fact">Continued the tradition of presidential visits to Long Branch after Grant.</div></div></div>
+      <div class="sp-item"><div class="sp-num">3</div><div class="sp-info"><div class="sp-name">James A. Garfield</div><div class="sp-fact">Brought to Long Branch after being shot in 1881, hoping sea air would aid recovery. He died there on September 19, 1881.</div></div></div>
+      <div class="sp-item"><div class="sp-num">4</div><div class="sp-info"><div class="sp-name">Chester A. Arthur</div><div class="sp-fact">Frequented Long Branch during and after his presidency.</div></div></div>
+      <div class="sp-item"><div class="sp-num">5</div><div class="sp-info"><div class="sp-name">Benjamin Harrison</div><div class="sp-fact">Vacationed at the Jersey Shore resort community in the 1890s.</div></div></div>
+      <div class="sp-item"><div class="sp-num">6</div><div class="sp-info"><div class="sp-name">William McKinley</div><div class="sp-fact">Visited Long Branch as part of the continuing presidential tradition.</div></div></div>
+      <div class="sp-item"><div class="sp-num">7</div><div class="sp-info"><div class="sp-name">Woodrow Wilson</div><div class="sp-fact">Maintained a summer presence on the New Jersey Shore, having also served as governor of New Jersey.</div></div></div>
+    </div>
   </div>
 </div>
 
@@ -7500,6 +7538,53 @@ function exportStatsCSV() {
     toast('Stats exported!','ok');
   }, null, pId);
 }
+
+// ══════════════════════════════════════════════════
+// EASTER EGG — Seven Presidents
+// Tap/click the sidebar logo 7 times within 3 seconds to reveal.
+// ══════════════════════════════════════════════════
+(function() {
+  var _spCount = 0, _spTimer = null;
+
+  function spOpen() {
+    document.getElementById('seven-pres-backdrop').classList.add('sp-open');
+    document.addEventListener('keydown', spEscListener);
+  }
+
+  function spEscListener(e) {
+    if (e.key === 'Escape') spClose();
+  }
+
+  window.spClose = function() {
+    document.getElementById('seven-pres-backdrop').classList.remove('sp-open');
+    document.removeEventListener('keydown', spEscListener);
+  };
+
+  window.spBackdropClick = function(e) {
+    if (e.target === document.getElementById('seven-pres-backdrop')) spClose();
+  };
+
+  function spReset() {
+    _spCount = 0;
+    if (_spTimer) { clearTimeout(_spTimer); _spTimer = null; }
+  }
+
+  document.addEventListener('DOMContentLoaded', function() {
+    var logo = document.getElementById('sb-logo');
+    if (!logo) return;
+    logo.addEventListener('click', function() {
+      _spCount++;
+      if (_spCount === 1) {
+        _spTimer = setTimeout(spReset, 3000);
+      }
+      if (_spCount >= 7) {
+        spReset();
+        spOpen();
+      }
+    });
+  });
+})();
+// ══════════════════════════════════════════════════
 
 </script>
 </body>
