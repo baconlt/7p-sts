@@ -471,6 +471,28 @@ body{font-family:'Barlow',sans-serif;background:var(--foam);color:var(--text);mi
 .sp-info{}
 .sp-name{font-family:'Barlow Condensed',sans-serif;font-size:1rem;font-weight:800;color:var(--navy);letter-spacing:.3px;}
 .sp-fact{font-size:.82rem;color:var(--muted);margin-top:3px;line-height:1.4;}
+
+/* ── SHIFT BINGO ── */
+#bingo-trigger{text-align:center;padding:22px 8px 6px;color:var(--border);font-family:'Barlow Condensed',sans-serif;font-size:.78rem;letter-spacing:7px;cursor:pointer;user-select:none;transition:color .25s;display:block;}
+#bingo-trigger:hover{color:var(--muted);}
+#bingo-backdrop{display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:10001;align-items:flex-start;justify-content:center;padding:16px;overflow-y:auto;}
+#bingo-backdrop.bg-open{display:flex;animation:sp-fade .2s ease;}
+#bingo-modal{background:#fff;border-radius:14px;width:440px;max-width:100%;box-shadow:0 24px 64px rgba(0,0,0,.35);position:relative;margin:auto;}
+.bg-hd{background:linear-gradient(135deg,var(--navy),var(--ocean));border-radius:14px 14px 0 0;padding:16px 20px 12px;color:#fff;text-align:center;position:relative;}
+.bg-title{font-family:'Barlow Condensed',sans-serif;font-size:1.7rem;font-weight:800;letter-spacing:10px;color:#fff;}
+.bg-sub{font-size:.72rem;color:var(--sky);letter-spacing:1px;margin-top:2px;text-transform:uppercase;}
+.bg-x{position:absolute;top:11px;right:13px;background:rgba(255,255,255,.15);border:none;color:#fff;width:27px;height:27px;border-radius:50%;font-size:.9rem;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:background .15s;}
+.bg-x:hover{background:rgba(255,255,255,.3);}
+.bg-letters{display:flex;background:var(--navy);}
+.bg-letter{flex:1;text-align:center;padding:6px 2px;font-family:'Barlow Condensed',sans-serif;font-size:1.1rem;font-weight:800;color:#fff;letter-spacing:2px;}
+#bg-banner{background:var(--sun);color:var(--navy);text-align:center;padding:9px 14px;font-family:'Barlow Condensed',sans-serif;font-size:1rem;font-weight:800;letter-spacing:.5px;line-height:1.5;}
+.bg-grid-wrap{padding:10px 12px 16px;overflow-x:auto;}
+.bg-grid{display:grid;grid-template-columns:repeat(5,minmax(50px,1fr));gap:5px;}
+.bg-cell{border:1.5px solid var(--border);border-radius:7px;padding:5px 3px;text-align:center;font-size:.62rem;font-weight:500;line-height:1.3;cursor:pointer;min-height:54px;display:flex;align-items:center;justify-content:center;color:var(--text);background:#fff;transition:background .15s,border-color .15s;-webkit-tap-highlight-color:transparent;}
+.bg-cell:hover{border-color:var(--wave);}
+.bg-cell.bg-marked{background:var(--wave);color:#fff;border-color:var(--wave);font-weight:600;}
+.bg-cell.bg-free{background:var(--foam);border-color:var(--sky);cursor:default;font-size:.9rem;}
+.bg-cell.bg-free.bg-marked{background:var(--sky);border-color:var(--sky);}
 </style>
 </head>
 <body>
@@ -580,6 +602,20 @@ body{font-family:'Barlow',sans-serif;background:var(--foam);color:var(--text);mi
       <div class="sp-item"><div class="sp-num">6</div><div class="sp-info"><div class="sp-name">William McKinley</div><div class="sp-fact">Visited Long Branch as part of the continuing presidential tradition.</div></div></div>
       <div class="sp-item"><div class="sp-num">7</div><div class="sp-info"><div class="sp-name">Woodrow Wilson</div><div class="sp-fact">Maintained a summer presence on the New Jersey Shore, having also served as governor of New Jersey.</div></div></div>
     </div>
+  </div>
+</div>
+
+<!-- ── SHIFT BINGO ── -->
+<div id="bingo-backdrop" onclick="bingoBackdropClick(event)">
+  <div id="bingo-modal">
+    <div class="bg-hd">
+      <button class="bg-x" onclick="bingoClose()">✕</button>
+      <div class="bg-title">B I N G O</div>
+      <div id="bg-sub" class="bg-sub"></div>
+    </div>
+    <div id="bg-banner" style="display:none"></div>
+    <div class="bg-letters"><div class="bg-letter">B</div><div class="bg-letter">I</div><div class="bg-letter">N</div><div class="bg-letter">G</div><div class="bg-letter">O</div></div>
+    <div class="bg-grid-wrap"><div class="bg-grid" id="bg-grid"></div></div>
   </div>
 </div>
 
@@ -1565,7 +1601,8 @@ R.dashboard=function(){
         <div class="card-title">Yesterday's Hours</div>
         <div id="yesterday-hours-body"><span class="muted">Loading…</span></div>
       </div>
-      ${D.pendingReqs.length?`<div class="card"><div class="card-title">⚡ Pending Requests</div>${reqTable(D.pendingReqs.slice(0,5))}</div>`:''}`;
+      ${D.pendingReqs.length?`<div class="card"><div class="card-title">⚡ Pending Requests</div>${reqTable(D.pendingReqs.slice(0,5))}</div>`:''}
+      <div id="bingo-trigger" onclick="bingoOpen()">B I N G O</div>`;
     loadClockedInCard();
     loadClockedOutCard();
     loadDashStatsCount();
@@ -1644,7 +1681,8 @@ function renderGuardDash(el){
         ${_allAvailOff.length?`<label style="font-size:.76rem;font-weight:400;display:flex;align-items:center;gap:5px;cursor:pointer;color:var(--muted)"><input type="checkbox" id="hide-days-off" onchange="toggleDaysOff(this)"> Hide days off</label>`:''}
       </div>
       ${_dashItems.length?_dashItems.map(item=>item._type==='off'?offDayCard(item.data):singleShiftCard(item.data,true)).join(''):`<div class="empty"><div class="ei">🏖️</div><p>Nothing scheduled yet.</p></div>`}
-    </div>`;
+    </div>
+    <div id="bingo-trigger" onclick="bingoOpen()">B I N G O</div>`;
 }
 
 // ══════════════════════════════════════════
@@ -4879,7 +4917,8 @@ function renderMobGuardDash() {
       <span>My Shifts (${upcoming.length})</span>
       ${_mobAllOff.length?`<label style="font-size:.76rem;font-weight:400;text-transform:none;letter-spacing:0;display:flex;align-items:center;gap:5px;cursor:pointer"><input type="checkbox" id="hide-days-off-mob" onchange="toggleDaysOff(this)"> Hide days off</label>`:''}
     </div>
-    ${_mobDashItems.length?_mobDashItems.map(item=>item._type==='off'?mobOffDayCard(item.data):mobShiftCardSingle(item.data)).join(''):`<div class="empty"><div class="ei">🏖️</div><p>No upcoming shifts yet.</p></div>`}`;
+    ${_mobDashItems.length?_mobDashItems.map(item=>item._type==='off'?mobOffDayCard(item.data):mobShiftCardSingle(item.data)).join(''):`<div class="empty"><div class="ei">🏖️</div><p>No upcoming shifts yet.</p></div>`}
+    <div id="bingo-trigger" onclick="bingoOpen()">B I N G O</div>`;
 }
 
 // ── MOBILE: MY SCHEDULE ───────────────────────────
@@ -7651,6 +7690,208 @@ function exportStatsCSV() {
       }
     });
   });
+})();
+// ══════════════════════════════════════════════════
+
+// ══════════════════════════════════════════════════
+// SHIFT BINGO
+// ══════════════════════════════════════════════════
+(function() {
+'use strict';
+
+var BINGO_ITEMS = [
+  '"Do jellyfish sting?"',
+  'Unsupervised toddler',
+  'Setup in front of stand',
+  '"Are you open tomorrow?"',
+  '"What time does the ocean close?"',
+  '"Where\'s the bathroom?"',
+  'Swimmer outside bathing area',
+  'Seagull steals food',
+  '"A fish touched me!"',
+  'Dead sealife draws a crowd',
+  'Dog on the beach',
+  'Whistle 3+ times ignored',
+  'Guard forgets equipment',
+  'Radio dies',
+  'Guard shows up late',
+  'Lost child reunion',
+  'First aid kit opened',
+  'Random stupid question',
+  'Tent/umbrella blows away',
+  'Weather clearance',
+  'Extreme sunburn',
+  'Wave takes sunglasses/clothing',
+  'Music blasting from blanket',
+  'Guard asleep on break'
+];
+
+var WIN_PATTERNS = [
+  {name:'ROW BINGO! 🎉',    cells:[0,1,2,3,4]},
+  {name:'ROW BINGO! 🎉',    cells:[5,6,7,8,9]},
+  {name:'ROW BINGO! 🎉',    cells:[10,11,12,13,14]},
+  {name:'ROW BINGO! 🎉',    cells:[15,16,17,18,19]},
+  {name:'ROW BINGO! 🎉',    cells:[20,21,22,23,24]},
+  {name:'COLUMN BINGO! 🎉', cells:[0,5,10,15,20]},
+  {name:'COLUMN BINGO! 🎉', cells:[1,6,11,16,21]},
+  {name:'COLUMN BINGO! 🎉', cells:[2,7,12,17,22]},
+  {name:'COLUMN BINGO! 🎉', cells:[3,8,13,18,23]},
+  {name:'COLUMN BINGO! 🎉', cells:[4,9,14,19,24]},
+  {name:'DIAGONAL! 🎯',     cells:[0,6,12,18,24]},
+  {name:'DIAGONAL! 🎯',     cells:[4,8,12,16,20]},
+  {name:'FENCE! 🤯',        cells:[0,1,2,3,4,5,9,10,14,15,19,20,21,22,23,24]},
+  {name:'FULL BOARD! 🏆',   cells:[0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24]}
+];
+
+function splitmix32(seed) {
+  return function() {
+    seed = (seed + 0x9e3779b9) | 0;
+    var t = seed ^ (seed >>> 16);
+    t = Math.imul(t, 0x21f0aaad) | 0;
+    t = t ^ (t >>> 15);
+    t = Math.imul(t, 0x735a2d97) | 0;
+    return ((t ^ (t >>> 15)) >>> 0) / 4294967296;
+  };
+}
+
+function hashStr(s) {
+  var h = 5381;
+  for (var i = 0; i < s.length; i++) {
+    h = (Math.imul(h, 31) + s.charCodeAt(i)) | 0;
+  }
+  return h;
+}
+
+function bingoSeedStr() {
+  var today = (typeof ymd === 'function') ? ymd(new Date()) : new Date().toISOString().slice(0, 10);
+  var ident;
+  if (typeof S !== 'undefined' && S && S.guard && S.guard.email) {
+    ident = S.guard.email.toLowerCase();
+  } else {
+    var fp = localStorage.getItem('bingo_fp');
+    if (!fp) {
+      fp = Math.random().toString(36).slice(2) + Date.now().toString(36);
+      localStorage.setItem('bingo_fp', fp);
+    }
+    ident = fp;
+  }
+  return today + '|' + ident;
+}
+
+function bingoGenBoard(prng) {
+  var items = BINGO_ITEMS.slice();
+  for (var i = items.length - 1; i > 0; i--) {
+    var j = Math.floor(prng() * (i + 1));
+    var tmp = items[i]; items[i] = items[j]; items[j] = tmp;
+  }
+  var board = [];
+  for (var k = 0; k < 25; k++) {
+    board.push(k === 12 ? null : items[k < 12 ? k : k - 1]);
+  }
+  return board;
+}
+
+var _bs = null;
+
+function bingoLoad() {
+  var seed = bingoSeedStr();
+  var today = seed.split('|')[0];
+  var stored = null;
+  try { stored = JSON.parse(localStorage.getItem('bingo_state') || 'null'); } catch (e) {}
+  if (!stored || stored.date !== today || stored.seed !== seed) {
+    _bs = { date: today, seed: seed, board: bingoGenBoard(splitmix32(hashStr(seed))), marks: [12], wins: [] };
+  } else {
+    _bs = stored;
+  }
+}
+
+function bingoSave() {
+  try { localStorage.setItem('bingo_state', JSON.stringify(_bs)); } catch (e) {}
+}
+
+function bingoBannerText() {
+  var seen = [];
+  _bs.wins.forEach(function(key) {
+    var name = key.replace(/^\d+:/, '');
+    if (seen.indexOf(name) === -1) seen.push(name);
+  });
+  return seen.join('  ·  ');
+}
+
+function bingoCheckWins() {
+  var marks = _bs.marks;
+  var newWins = [];
+  WIN_PATTERNS.forEach(function(p, i) {
+    var key = i + ':' + p.name;
+    if (_bs.wins.indexOf(key) !== -1) return;
+    if (p.cells.every(function(c) { return marks.indexOf(c) !== -1; })) {
+      _bs.wins.push(key);
+      newWins.push(p.name);
+    }
+  });
+  return newWins;
+}
+
+function bingoRenderGrid() {
+  var grid = document.getElementById('bg-grid');
+  if (!grid) return;
+  var marks = _bs.marks;
+  var html = '';
+  for (var i = 0; i < 25; i++) {
+    var isFree = (i === 12);
+    var isMarked = marks.indexOf(i) !== -1;
+    var cls = 'bg-cell' + (isFree ? ' bg-free' : '') + (isMarked ? ' bg-marked' : '');
+    var txt = isFree ? '🏖️' : (_bs.board[i] || '');
+    html += '<div class="' + cls + '"' + (isFree ? '' : ' onclick="bingoToggle(' + i + ')"') + '>' + txt + '</div>';
+  }
+  grid.innerHTML = html;
+}
+
+function bingoUpdateBanner() {
+  var banner = document.getElementById('bg-banner');
+  if (!banner) return;
+  var txt = bingoBannerText();
+  if (txt) { banner.textContent = txt; banner.style.display = 'block'; }
+  else { banner.style.display = 'none'; }
+}
+
+window.bingoOpen = function() {
+  bingoLoad();
+  var sub = document.getElementById('bg-sub');
+  if (sub) {
+    var parts = _bs.date.split('-');
+    var months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    sub.textContent = months[+parts[1] - 1] + ' ' + +parts[2] + ', ' + parts[0];
+  }
+  bingoRenderGrid();
+  bingoUpdateBanner();
+  document.getElementById('bingo-backdrop').classList.add('bg-open');
+  document.addEventListener('keydown', _bingoEsc);
+};
+
+window.bingoClose = function() {
+  document.getElementById('bingo-backdrop').classList.remove('bg-open');
+  document.removeEventListener('keydown', _bingoEsc);
+};
+
+function _bingoEsc(e) { if (e.key === 'Escape') window.bingoClose(); }
+
+window.bingoBackdropClick = function(e) {
+  if (e.target === document.getElementById('bingo-backdrop')) window.bingoClose();
+};
+
+window.bingoToggle = function(idx) {
+  if (!_bs || idx === 12) return;
+  var pos = _bs.marks.indexOf(idx);
+  if (pos === -1) _bs.marks.push(idx);
+  else _bs.marks.splice(pos, 1);
+  bingoSave();
+  bingoRenderGrid();
+  var newWins = bingoCheckWins();
+  if (newWins.length) bingoSave();
+  bingoUpdateBanner();
+};
+
 })();
 // ══════════════════════════════════════════════════
 
