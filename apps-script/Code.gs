@@ -1114,7 +1114,7 @@ function setupSpreadsheet() {
                     'total_minutes','status','edited','edited_by','edited_at','locked',
                     'clock_in_lat','clock_in_lng','clock_in_dist_ft','clock_in_location',
                     'clock_out_lat','clock_out_lng','clock_out_dist_ft','clock_out_location',
-                    'auto_clocked_out','notes','created_at'],
+                    'auto_clocked_out','notes','created_at','stats_dismissed'],
     Locations:     ['id','name','polygon','active','notes'],
     ShiftStats:    ['id','guard_id','guard_name','time_record_id','shift_id','date','submitted_at',
                     'beach_location',
@@ -1268,7 +1268,7 @@ function getPendingStatsAlerts(token) {
       .map(s => s.time_record_id)
   );
 
-  return completedRecords.filter(r => !submittedIds.has(r.id));
+  return completedRecords.filter(r => !submittedIds.has(r.id) && !r.stats_dismissed);
 }
 
 function getAllShiftStats(token, periodId) {
@@ -1318,15 +1318,19 @@ function getAdminStatsData(token, date) {
 
   const allStats = sheetToObjects(SHEETS.SHIFT_STATS);
   const statsForDate = allStats.filter(s => toYMD(s.date) === queryDate);
+  const statsToday   = allStats.filter(s => toYMD(s.date) === today);
 
   const submittedTRIds = new Set(allStats.map(s => s.time_record_id).filter(Boolean));
+  // Fallback: guard+date pairs — covers any stats regardless of whether time_record_id is linked correctly
+  const submittedGuardDates = new Set(allStats.map(s => `${s.guard_id}|${toYMD(s.date)}`));
   const allTimeRecords = sheetToObjects(SHEETS.TIME_RECORDS);
 
+  // missingToday always reflects today regardless of selected date
   const dateCompleteRecords = allTimeRecords.filter(r =>
-    r.status === 'complete' && toYMD(r.date) === queryDate
+    r.status === 'complete' && toYMD(r.date) === today
   );
   const missingToday = dateCompleteRecords
-    .filter(r => !submittedTRIds.has(r.id))
+    .filter(r => !submittedTRIds.has(r.id) && !submittedGuardDates.has(`${r.guard_id}|${today}`))
     .map(r => ({
       guard_id:       r.guard_id,
       guard_name:     r.guard_name || r.guard_id,
@@ -1344,7 +1348,7 @@ function getAdminStatsData(token, date) {
     }
   });
   const missingLastShift = Object.values(latestByGuard)
-    .filter(r => !submittedTRIds.has(r.id))
+    .filter(r => !submittedTRIds.has(r.id) && !submittedGuardDates.has(`${r.guard_id}|${toYMD(r.date)}`) && r.stats_dismissed !== true && r.stats_dismissed !== 'true')
     .map(r => {
       const guard = findGuardById(r.guard_id);
       return {
@@ -1356,18 +1360,50 @@ function getAdminStatsData(token, date) {
       };
     });
 
+  const statKeys = ['preventive_actions','bather_assists','rfd_rescues','rfd_line_rescues',
+                    'seabob_rescues','first_aid','incidents','ten_55','ten_24','ten_34',
+                    'patron_harassment','vandalism'];
+  const seasonTotals = {};
+  statKeys.forEach(k => { seasonTotals[k] = 0; });
+  const guardTotalsMap = {};
+  allStats.forEach(s => {
+    statKeys.forEach(k => { seasonTotals[k] += parseInt(s[k]) || 0; });
+    const gid = String(s.guard_id);
+    if (!guardTotalsMap[gid]) {
+      guardTotalsMap[gid] = { guard_id: gid, guard_name: s.guard_name || gid, cards: 0 };
+      statKeys.forEach(k => { guardTotalsMap[gid][k] = 0; });
+    }
+    guardTotalsMap[gid].cards++;
+    statKeys.forEach(k => { guardTotalsMap[gid][k] += parseInt(s[k]) || 0; });
+  });
+  const guardTotals = Object.values(guardTotalsMap)
+    .sort((a, b) => (b.bather_assists + b.rfd_rescues) - (a.bather_assists + a.rfd_rescues));
+
   return {
     date:           queryDate,
     today,
     statsForDate,
+    statsToday,
     missingToday,
-    missingLastShift
+    missingLastShift,
+    seasonTotals,
+    guardTotals,
+    totalCards:     allStats.length
   };
 }
 
 function clientSubmitShiftStats(token, d)          { return submitShiftStats(token, d); }
 function clientGetMyShiftStats(token, periodId)    { return getMyShiftStats(token, periodId); }
 function clientGetPendingStatsAlerts(token)        { return getPendingStatsAlerts(token); }
+function clientDismissStatsAlert(token, timeRecordId) {
+  const session = getSessionFromToken(token);
+  if (!session) return { success: false };
+  const guardId = String(session.guard.id);
+  const rec = sheetToObjects(SHEETS.TIME_RECORDS).find(r => String(r.id) === String(timeRecordId));
+  if (!rec || String(rec.guard_id) !== guardId) return { success: false };
+  updateById(SHEETS.TIME_RECORDS, { id: timeRecordId, stats_dismissed: true });
+  return { success: true };
+}
 function clientGetActiveClockins(token) {
   requireAdmin(token);
   const open = sheetToObjects(SHEETS.TIME_RECORDS).filter(r => r.status === 'open');
@@ -1387,6 +1423,51 @@ function clientGetActiveClockins(token) {
 function clientGetAllShiftStats(token, periodId)   { return getAllShiftStats(token, periodId); }
 function clientExportShiftStatsCSV(token, periodId){ return exportShiftStatsCSV(token, periodId); }
 function clientGetAdminStatsData(token, date)      { return getAdminStatsData(token, date); }
+
+function nudgeGuardStats(token, guardId, date) {
+  requireAdmin(token);
+  const guard = findGuardById(guardId);
+  if (!guard || !guard.email) return { success: false, message: 'No email on file for this guard.' };
+
+  const d = new Date(date + 'T12:00:00');
+  const DAYS_L  = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+  const MONTHS_L = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+  const dateFmt = `${DAYS_L[d.getDay()]}, ${MONTHS_L[d.getMonth()]} ${d.getDate()}`;
+  const name = guard.name.split(' ')[0];
+
+  const phrases = [
+    `Psst, ${name} — your shift on ${dateFmt} is almost officially in the books... just need that stats card from you!`,
+    `${name}, the seagulls filed their report. The piping plovers filed their report. Just need yours for ${dateFmt}! 📋`,
+    `Tower's closed, whistle's down, ${name} — just your stats card for ${dateFmt} left to go! 🏄`,
+    `${name} — beaches are clear, guards are home, but your ${dateFmt} stats card is 10-55! Let's start the search.`,
+    `Quick one, ${name} — your stats card for ${dateFmt} is MIA. The Supe would love to see it when you get a chance.`,
+    `All clear on the beach, ${name}! Just your stats card for ${dateFmt} left to call it a day. 🏖️`,
+    `${name}, consider this a friendly tap on the shoulder — your stats card for ${dateFmt} hasn't made it in yet!`,
+    `Your shift rocked, ${name}. Now your stats card for ${dateFmt} just needs to find its way home. 📋`,
+    `${name} — one small thing between a great shift and a complete one: your stats card for ${dateFmt}. You've got this. 🚩`
+  ];
+  const body = phrases[Math.floor(Math.random() * phrases.length)];
+  const htmlBody = `<p>${body}</p><p style="margin-top:16px"><a href="https://baconlt.github.io/7p-sts/">Submit your stats card →</a></p><p style="color:#888;font-size:.8em;margin-top:24px">— 7 Presidents STS</p>`;
+
+  try {
+    MailApp.sendEmail({
+      to: guard.email,
+      subject: `Stats card reminder — ${dateFmt}`,
+      body: body + '\n\nSubmit here: https://baconlt.github.io/7p-sts/\n\n— 7 Presidents STS',
+      htmlBody
+    });
+    return { success: true };
+  } catch(e) {
+    return { success: false, message: e.message };
+  }
+}
+function clientNudgeGuardStats(token, guardId, date) { return nudgeGuardStats(token, guardId, date); }
+
+function clientAdminDismissLastShift(token, timeRecordId) {
+  requireAdmin(token);
+  updateById(SHEETS.TIME_RECORDS, { id: timeRecordId, stats_dismissed: true });
+  return { success: true };
+}
 function clientGetGuards()                 { return getAllGuards(); }
 function clientGetPosts()                  { return getAllPosts(); }
 function clientGetTemplates()              { return getAllTemplates(); }
@@ -1658,57 +1739,64 @@ function clockIn(d) {
     guard   = session.guard;
   }
 
-  // Block if already clocked in today
-  const open = getOpenTimeRecord(guardId);
-  if (open) return { success: false, message: 'You are already clocked in.', record: open };
+  // Use a script lock to prevent duplicate clock-ins from simultaneous requests
+  const lock = LockService.getScriptLock();
+  lock.waitLock(10000);
+  try {
+    // Block if already clocked in today (checked inside lock to prevent race)
+    const open = getOpenTimeRecord(guardId);
+    if (open) return { success: false, message: 'You are already clocked in.', record: open };
 
-  // Find matching shift if any
-  const today = toYMD(new Date());
-  const shifts = sheetToObjects(SHEETS.SHIFTS).filter(s =>
-    toYMD(s.date) === today &&
-    String(s.assigned_guard_id) === guardId &&
-    s.status !== 'cancelled'
-  );
-  const shift = shifts[0] || null;
+    // Find matching shift if any
+    const today = toYMD(new Date());
+    const shifts = sheetToObjects(SHEETS.SHIFTS).filter(s =>
+      toYMD(s.date) === today &&
+      String(s.assigned_guard_id) === guardId &&
+      s.status !== 'cancelled'
+    );
+    const shift = shifts[0] || null;
 
-  // Reference location from config
-  const hqLat = parseFloat(ttConfig('hq_lat', '40.2171'));
-  const hqLng = parseFloat(ttConfig('hq_lng', '-74.0060'));
+    // Reference location from config
+    const hqLat = parseFloat(ttConfig('hq_lat', '40.2171'));
+    const hqLng = parseFloat(ttConfig('hq_lng', '-74.0060'));
 
-  const distFt = d.lat && d.lng ? distanceFeet(d.lat, d.lng, hqLat, hqLng) : null;
-  const inLocation = d.lat && d.lng ? resolveLocation(d.lat, d.lng) : '';
+    const distFt = d.lat && d.lng ? distanceFeet(d.lat, d.lng, hqLat, hqLng) : null;
+    const inLocation = d.lat && d.lng ? resolveLocation(d.lat, d.lng) : '';
 
-  const now = new Date();
-  const id = uid('TR');
-  appendRow(SHEETS.TIME_RECORDS, {
-    id,
-    guard_id:          guardId,
-    guard_name:        guard.name || '',
-    shift_id:          shift ? shift.id : '',
-    date:              today,
-    clock_in:          now.toISOString(),
-    clock_out:         '',
-    break_minutes:     '',
-    total_minutes:     '',
-    status:            'open',
-    edited:            'false',
-    edited_by:         '',
-    edited_at:         '',
-    locked:            'false',
-    clock_in_lat:      d.lat || '',
-    clock_in_lng:      d.lng || '',
-    clock_in_dist_ft:  distFt !== null ? distFt : '',
-    clock_in_location: inLocation,
-    clock_out_lat:     '',
-    clock_out_lng:     '',
-    clock_out_dist_ft: '',
-    clock_out_location:'',
-    auto_clocked_out:  'false',
-    notes:             d.notes || '',
-    created_at:        now.toISOString()
-  });
+    const now = new Date();
+    const id = uid('TR');
+    appendRow(SHEETS.TIME_RECORDS, {
+      id,
+      guard_id:          guardId,
+      guard_name:        guard.name || '',
+      shift_id:          shift ? shift.id : '',
+      date:              today,
+      clock_in:          now.toISOString(),
+      clock_out:         '',
+      break_minutes:     '',
+      total_minutes:     '',
+      status:            'open',
+      edited:            'false',
+      edited_by:         '',
+      edited_at:         '',
+      locked:            'false',
+      clock_in_lat:      d.lat || '',
+      clock_in_lng:      d.lng || '',
+      clock_in_dist_ft:  distFt !== null ? distFt : '',
+      clock_in_location: inLocation,
+      clock_out_lat:     '',
+      clock_out_lng:     '',
+      clock_out_dist_ft: '',
+      clock_out_location:'',
+      auto_clocked_out:  'false',
+      notes:             d.notes || '',
+      created_at:        now.toISOString()
+    });
 
-  return { success: true, id, clock_in: now.toISOString(), shift_id: shift ? shift.id : '' };
+    return { success: true, id, clock_in: now.toISOString(), shift_id: shift ? shift.id : '' };
+  } finally {
+    lock.releaseLock();
+  }
 }
 
 // Clock out

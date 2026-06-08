@@ -1762,7 +1762,9 @@ function renderSchedGrid(){
     const ds=ymd(d),hol=holiday(ds),we=isWE(ds),isT=ds===today,isSat=d.getDay()===6,isFri=d.getDay()===5;
     const cls=isT?'th-today':hol?'th-holiday':we?'th-weekend':'th-normal';
     const satStyle=isSat?'border-left:3px solid #57a0d3;':'';
-    th+=`<th class="${cls}" style="min-width:86px;${satStyle}">${DAYS[d.getDay()]}<br>${d.getDate()}${hol?`<div style="font-size:.56rem;opacity:.85">${hol.split(' ')[0]}</div>`:''}</th>`;
+    const guardCount=new Set(D.shifts.filter(s=>s.date===ds&&s.status!=='cancelled'&&s.assigned_guard_id).map(s=>String(s.assigned_guard_id))).size;
+    const cntBadge=guardCount>0?`<div style="font-size:.6rem;color:#7dd3fc;font-weight:600;margin-top:1px">${guardCount} grd</div>`:'';
+    th+=`<th class="${cls}" style="min-width:86px;${satStyle}">${DAYS[d.getDay()]}<br>${d.getDate()}${hol?`<div style="font-size:.56rem;opacity:.85">${hol.split(' ')[0]}</div>`:''}${cntBadge}</th>`;
     if(isFri) th+=`<th style="background:#1e3a5f;min-width:60px;font-size:.71rem;white-space:normal;line-height:1.2;padding:4px 3px" rowspan="2">Wk<br>Hrs/OT</th>`;
   });
   th+=`</tr>`;
@@ -7136,6 +7138,7 @@ function dismissStats(timeRecordId) {
   SNOOZED_STATS[timeRecordId] = '2099-12-31';
   PENDING_STATS = PENDING_STATS.filter(r => r.id !== timeRecordId);
   const p = _loadSnoozePersisted(); p[timeRecordId] = '2099-12-31'; _saveSnoozePersisted(p);
+  runG('clientDismissStatsAlert', ()=>{}, null, timeRecordId);
   refreshStatsAlerts();
 }
 
@@ -7152,7 +7155,12 @@ function openStatsForm(timeRecordId) {
   </div>`);
 
   runG('clientGetMyTimeRecords', records => {
-    const rec = (records||[]).find(r => r.id === timeRecordId);
+    let rec = timeRecordId ? (records||[]).find(r => r.id === timeRecordId) : null;
+    // When opened without a specific ID, auto-link to today's completed time record
+    if (!rec && !timeRecordId) {
+      const todayStr = ymd(new Date());
+      rec = (records||[]).find(r => ymd(new Date(r.date+'T12:00:00')) === todayStr && r.status === 'complete');
+    }
     showStatsModal(rec || { id: timeRecordId||'', date: ymd(new Date()), guard_name: S?.guard?.name });
   }, e => { closeModal(); toast('Could not load. Try again.','err'); }, D.activePeriod?.id);
 }
@@ -7206,7 +7214,11 @@ function showStatsModal(rec) {
       </div>
     </div>
 
-    <div style="font-family:'Barlow Condensed',sans-serif;font-size:.85rem;font-weight:700;color:var(--navy);text-transform:uppercase;letter-spacing:.5px;margin:12px 0 6px">Incidents & Actions</div>
+    <div style="font-family:'Barlow Condensed',sans-serif;font-size:.85rem;font-weight:700;color:var(--navy);text-transform:uppercase;letter-spacing:.5px;margin:12px 0 4px">Incidents & Actions</div>
+    <div style="font-size:.75rem;color:var(--muted);margin-bottom:8px;line-height:1.4">
+      Count only actions <strong>you performed as the primary actor</strong>, and enter the number of <strong>people affected</strong> — not the number of times.
+      For example, in a line rescue the <em>line swimmer</em> gets credit — not the puller or free torpedo support.
+    </div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:0 16px">
       ${numField('preventive','Preventive Actions')}
       ${numField('bather','Bather Assists')}
@@ -7388,12 +7400,14 @@ const STAT_ROWS = [
 
 let _adminStatsDate = null;
 let _adminStatsData = null;
+let _guardTotalsSort = { key: null, dir: -1 };
 
 R['stats-admin'] = function() {
   if (!_adminStatsDate) _adminStatsDate = ymd(new Date());
 
   document.getElementById('topbar-actions').innerHTML =
-    `<button class="btn btn-outline btn-sm" onclick="exportStatsCSV()">📥 Export CSV</button>`;
+    `<button class="btn btn-outline btn-sm" onclick="loadAdminStatsData()" title="Refresh">↻</button>
+     <button class="btn btn-outline btn-sm" onclick="exportStatsCSV()">📥 Export CSV</button>`;
 
   document.getElementById('content').innerHTML = `
     <div class="card" style="margin-bottom:12px;padding:14px">
@@ -7467,8 +7481,8 @@ function renderAdminStatsPage() {
     const total = rowTotals[row.key];
     return `<tr style="${!hasAny ? 'opacity:.5' : ''}">
       <td style="font-weight:600;font-size:.82rem;white-space:nowrap;color:${row.color};padding-right:12px">${row.label}</td>
-      ${cells}
       <td style="text-align:center;font-weight:700;font-size:.82rem;background:var(--foam);color:${total > 0 ? row.color : 'var(--muted)'}">${total > 0 ? total : '—'}</td>
+      ${cells}
     </tr>`;
   }).join('');
 
@@ -7477,9 +7491,17 @@ function renderAdminStatsPage() {
   const missingTodayHtml = (d.missingToday || []).length
     ? (d.missingToday).map(r => {
         const coStr = r.clock_out ? new Date(r.clock_out).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}) : '';
+        const nudgeId = `nudge-${r.guard_id}`;
+        const lastNudge = localStorage.getItem(`nudge_${r.guard_id}`);
+        const sentToday = lastNudge === today;
         return `<div style="display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid var(--border)">
-          <span style="font-weight:600;font-size:.85rem">${r.guard_name}</span>
+          <span style="font-weight:600;font-size:.85rem;flex:1">${r.guard_name}</span>
           ${coStr ? `<span style="color:var(--muted);font-size:.78rem">out ${coStr}</span>` : ''}
+          <button id="${nudgeId}" class="btn btn-outline btn-xs"
+            onclick="sendNudge('${r.guard_id}','${today}','${nudgeId}')"
+            ${sentToday ? 'disabled' : ''}
+            style="${sentToday ? 'color:var(--wave);opacity:1' : ''}"
+          >${sentToday ? 'Sent ✓' : 'Nudge'}</button>
         </div>`;
       }).join('')
     : '<div style="color:var(--muted);font-size:.82rem;padding:4px 0">None</div>';
@@ -7488,30 +7510,34 @@ function renderAdminStatsPage() {
   const missingLastHtml = missingLastShiftFiltered.length
     ? missingLastShiftFiltered.map(r => {
         const coStr = r.clock_out ? new Date(r.clock_out).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}) : '';
-        return `<div style="display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid var(--border)">
-          <span style="font-weight:600;font-size:.85rem">${r.guard_name}</span>
+        const rowId = `mlsr-${r.time_record_id}`;
+        return `<div id="${rowId}" style="display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid var(--border)">
+          <span style="font-weight:600;font-size:.85rem;flex:1">${r.guard_name}</span>
           <span style="color:var(--muted);font-size:.78rem">${fd(r.date)}${coStr ? ' · out ' + coStr : ''}</span>
+          <button class="btn btn-outline btn-xs" style="color:var(--muted);padding:2px 6px" onclick="dismissLastShift('${r.time_record_id}','${rowId}')" title="Dismiss">✕</button>
         </div>`;
       }).join('')
     : '<div style="color:var(--muted);font-size:.82rem;padding:4px 0">All caught up ✓</div>';
 
-  const submittedCount = (d.statsForDate || []).length;
-  const submittedGuards = (d.statsForDate || []).map(s => s.guard_name || s.guard_id);
+  // Top widgets always show today regardless of selected date
+  const submittedCount = (d.statsToday || []).length;
+  const submittedGuards = (d.statsToday || []).map(s => s.guard_name || s.guard_id);
   const submittedGuardsHtml = submittedGuards.length
-    ? `<div style="margin-top:8px;font-size:.78rem;color:var(--muted)">${submittedGuards.join(', ')}</div>` : '';
-  const submittedTitle = d.date === today ? 'Submitted Today' : 'Submitted';
-  const submittedSub = d.date === today ? `stat card${submittedCount !== 1 ? 's' : ''} so far` : `stat card${submittedCount !== 1 ? 's' : ''}`;
+    ? `<div style="margin-top:8px;display:grid;grid-template-columns:1fr 1fr;gap:2px 8px">
+        ${submittedGuards.map(n => `<div style="font-size:.78rem;color:var(--muted);padding:2px 0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${n}</div>`).join('')}
+       </div>` : '';
+  const submittedSub = `stat card${submittedCount !== 1 ? 's' : ''} so far`;
 
   const todaySection = `
     <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:12px">
       <div class="card" style="padding:16px">
-        <div class="card-title">${submittedTitle}</div>
+        <div class="card-title">Submitted Today</div>
         <div style="font-family:'Barlow Condensed',sans-serif;font-size:2rem;font-weight:800;color:var(--wave)">${submittedCount}</div>
         <div style="font-size:.75rem;color:var(--muted)">${submittedSub}</div>
         ${submittedGuardsHtml}
       </div>
       <div class="card" style="padding:16px">
-        <div class="card-title" style="color:var(--coral)">Clocked Out, No Card</div>
+        <div class="card-title" style="color:var(--coral)">Clocked Out Today, No Card</div>
         ${missingTodayHtml}
       </div>
       <div class="card" style="padding:16px">
@@ -7531,8 +7557,8 @@ function renderAdminStatsPage() {
         <table class="tbl" style="min-width:750px">
           <thead><tr>
             <th style="text-align:left;white-space:nowrap;min-width:140px">Stat</th>
-            ${STAT_POSTS.map(p=>`<th style="text-align:center;font-size:.73rem;white-space:nowrap">${p}</th>`).join('')}
             <th style="text-align:center;background:var(--foam)">Total</th>
+            ${STAT_POSTS.map(p=>`<th style="text-align:center;font-size:.73rem;white-space:nowrap">${p}</th>`).join('')}
           </tr></thead>
           <tbody>${gridRows}</tbody>
         </table>
@@ -7572,7 +7598,111 @@ function renderAdminStatsPage() {
         <p class="muted" style="margin-top:8px">No stat cards submitted for ${fd(d.date)}.</p>
       </div>`;
 
-  el.innerHTML = todaySection + gridSection + listSection;
+  // Season Totals widget
+  const st = d.seasonTotals || {};
+  const seasonTotalsHtml = STAT_ROWS.map(row => {
+    const v = st[row.key] || 0;
+    return `<div style="display:flex;justify-content:space-between;align-items:center;padding:5px 0;border-bottom:1px solid var(--border)">
+      <span style="font-size:.82rem;font-weight:600;color:${row.color}">${row.label}</span>
+      <span style="font-family:'Barlow Condensed',sans-serif;font-size:1.1rem;font-weight:800;color:${v > 0 ? row.color : 'var(--border)'}">${v > 0 ? v : '—'}</span>
+    </div>`;
+  }).join('');
+  const seasonSection = `
+    <div style="display:grid;grid-template-columns:1fr 2fr;gap:12px;margin-bottom:12px">
+      <div class="card" style="padding:16px">
+        <div class="card-title">Season Totals</div>
+        <div style="font-size:.72rem;color:var(--muted);margin-bottom:8px">${d.totalCards || 0} card${d.totalCards !== 1 ? 's' : ''} submitted</div>
+        ${seasonTotalsHtml}
+      </div>
+      <div class="card" style="padding:0;overflow:hidden">
+        <div style="padding:12px 16px;border-bottom:1px solid var(--border);font-family:'Barlow Condensed',sans-serif;font-size:.9rem;font-weight:700;color:var(--navy);text-transform:uppercase;letter-spacing:.5px">
+          Individual Totals — Season
+        </div>
+        ${(d.guardTotals||[]).length ? `
+        <div style="overflow-x:auto">
+          <table class="tbl" id="guard-totals-table" style="font-size:.78rem">
+            <thead><tr>
+              <th data-sort="guard_name" onclick="sortGuardTotals('guard_name')" style="text-align:left;cursor:pointer;user-select:none">Guard<span class="sort-ind"></span></th>
+              <th data-sort="cards" onclick="sortGuardTotals('cards')" style="text-align:center;cursor:pointer;user-select:none">Cards<span class="sort-ind"></span></th>
+              ${STAT_ROWS.map(r=>`<th data-sort="${r.key}" onclick="sortGuardTotals('${r.key}')" style="text-align:center;white-space:nowrap;color:${r.color};cursor:pointer;user-select:none">${r.label}<span class="sort-ind"></span></th>`).join('')}
+            </tr></thead>
+            <tbody id="guard-totals-tbody"></tbody>
+          </table>
+        </div>` : '<div style="color:var(--muted);font-size:.82rem;padding:16px">No stats yet.</div>'}
+      </div>
+    </div>`;
+
+  el.innerHTML = todaySection + gridSection + listSection + seasonSection;
+  renderGuardTotalsBody();
+}
+
+function sortGuardTotals(key) {
+  if (_guardTotalsSort.key === key) {
+    _guardTotalsSort.dir *= -1;
+  } else {
+    _guardTotalsSort.key = key;
+    _guardTotalsSort.dir = key === 'guard_name' ? 1 : -1;
+  }
+  renderGuardTotalsBody();
+}
+
+function renderGuardTotalsBody() {
+  const tbody = document.getElementById('guard-totals-tbody');
+  if (!tbody || !_adminStatsData) return;
+  const guards = [...(_adminStatsData.guardTotals || [])];
+  const { key, dir } = _guardTotalsSort;
+  if (key) {
+    guards.sort((a, b) => key === 'guard_name'
+      ? dir * a.guard_name.localeCompare(b.guard_name)
+      : dir * ((a[key] || 0) - (b[key] || 0)));
+  }
+  tbody.innerHTML = guards.map(g => `<tr>
+    <td style="font-weight:600;white-space:nowrap">${g.guard_name}</td>
+    <td style="text-align:center;color:var(--muted)">${g.cards}</td>
+    ${STAT_ROWS.map(r => { const v = g[r.key]||0; return `<td style="text-align:center;${v>0?`color:${r.color};font-weight:700`:'color:var(--border)'}">${v>0?v:'—'}</td>`; }).join('')}
+  </tr>`).join('');
+  document.querySelectorAll('#guard-totals-table th[data-sort]').forEach(th => {
+    th.querySelector('.sort-ind').textContent = th.dataset.sort === key ? (dir === -1 ? ' ↓' : ' ↑') : '';
+  });
+}
+
+function dismissLastShift(timeRecordId, rowId) {
+  const row = document.getElementById(rowId);
+  if (row) row.style.opacity = '0.4';
+  arun('clientAdminDismissLastShift', r => {
+    if (r && r.success) {
+      if (row) row.remove();
+    } else {
+      if (row) row.style.opacity = '1';
+      toast('Could not dismiss.', 'err');
+    }
+  }, e => {
+    if (row) row.style.opacity = '1';
+    toast('Could not dismiss: ' + (e.message || e), 'err');
+  }, timeRecordId);
+}
+
+function sendNudge(guardId, date, btnId) {
+  const btn = document.getElementById(btnId);
+  if (!btn || btn.disabled) return; // double-tap guard
+  btn.disabled = true;
+  btn.textContent = '…';
+  const onFail = e => {
+    btn.disabled = false;
+    btn.textContent = 'Nudge';
+    toast('Nudge failed: ' + (e.message || e), 'err');
+  };
+  arun('clientNudgeGuardStats', r => {
+    if (!btn) return;
+    if (r && r.success) {
+      localStorage.setItem(`nudge_${guardId}`, date);
+      btn.textContent = 'Sent ✓';
+      btn.style.color = 'var(--wave)';
+      btn.style.opacity = '1';
+    } else {
+      onFail({ message: r && r.message });
+    }
+  }, onFail, guardId, date);
 }
 
 function exportStatsCSV() {
