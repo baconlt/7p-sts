@@ -20,7 +20,8 @@ const SHEETS = {
   TIME_RECORDS:   'TimeRecords',
   SHIFT_STATS:    'ShiftStats',
   SESSIONS:       'Sessions',
-  LOCATIONS:      'Locations'
+  LOCATIONS:      'Locations',
+  BADGES:         'Badges'
 };
 
 // ── ENTRY POINT ─────────────────────────────────────────────
@@ -1126,7 +1127,8 @@ function setupSpreadsheet() {
                     'patron_harassment','patron_harassment_desc',
                     'vandalism','vandalism_desc',
                     'training','surf_condition','wind_direction','air_temp','weather','flags_flown','notes'],
-    Sessions:      ['token','guard_id','role','created_at','expires_at']
+    Sessions:      ['token','guard_id','role','created_at','expires_at'],
+    Badges:        ['id','guard_id','badge_key','earned_at','meta']
   };
   for (const [name, headers] of Object.entries(schemas)) {
     let sheet = ss.getSheetByName(name) || ss.insertSheet(name);
@@ -1462,6 +1464,200 @@ function nudgeGuardStats(token, guardId, date) {
   }
 }
 function clientNudgeGuardStats(token, guardId, date) { return nudgeGuardStats(token, guardId, date); }
+
+// ── BADGES / ACHIEVEMENTS ─────────────────────────────────────
+// All criteria are derived from data the app already stores (TimeRecords,
+// ShiftStats, Shifts/ShiftTemplates). Earned badges are persisted to the
+// Badges sheet so we can detect newly-earned ones and keep a permanent record.
+
+// Registry — single source of truth. Each def's earned()/progress() receive the
+// per-guard ctx built by buildBadgeCtx_(). To add a badge, add one object here.
+const BADGE_DEFS = [
+  { key:'stats_streak_5',  name:'On the Record', emoji:'🗒️', category:'Diligence',
+    desc:'5 shifts in a row with stats submitted',
+    earned: c => c.statsStreak >= 5,
+    progress: c => ({ current: Math.min(c.statsStreak, 5), target: 5 }) },
+  { key:'stats_streak_10', name:'Diligent', emoji:'📋', category:'Diligence',
+    desc:'10 shifts in a row with stats submitted',
+    earned: c => c.statsStreak >= 10,
+    progress: c => ({ current: Math.min(c.statsStreak, 10), target: 10 }) },
+  { key:'stats_streak_20', name:'Meticulous', emoji:'📊', category:'Diligence',
+    desc:'20 shifts in a row with stats submitted',
+    earned: c => c.statsStreak >= 20,
+    progress: c => ({ current: Math.min(c.statsStreak, 20), target: 20 }) },
+  { key:'stats_streak_50', name:'Statistician', emoji:'🏆', category:'Diligence',
+    desc:'50 shifts in a row with stats submitted',
+    earned: c => c.statsStreak >= 50,
+    progress: c => ({ current: Math.min(c.statsStreak, 50), target: 50 }) },
+  { key:'late_shift_10hr', name:'Closing Time', emoji:'🌙', category:'Endurance',
+    desc:'Worked a 10-hour late shift without an auto clock-out',
+    earned: c => c.tenHourNoAuto >= 1,
+    progress: c => ({ current: Math.min(c.tenHourNoAuto, 1), target: 1 }) },
+  { key:'iron_week', name:'Iron Week', emoji:'💪', category:'Endurance',
+    desc:'5 ten-hour shifts in a single work week',
+    earned: c => c.maxTenHourWeek >= 5,
+    progress: c => ({ current: Math.min(c.maxTenHourWeek, 5), target: 5 }) },
+  { key:'ten_in_a_row', name:'Unbroken', emoji:'🔥', category:'Endurance',
+    desc:'Worked 10 days in a row',
+    earned: c => c.maxConsecutiveDays >= 10,
+    progress: c => ({ current: Math.min(c.maxConsecutiveDays, 10), target: 10 }) }
+];
+
+// Build the per-guard context once, then evaluate every def against it.
+function buildBadgeCtx_(guardId) {
+  const gid = String(guardId);
+  const completed = sheetToObjects(SHEETS.TIME_RECORDS)
+    .filter(r => String(r.guard_id) === gid && r.status === 'complete')
+    .sort((a, b) => {
+      const d = toYMD(a.date).localeCompare(toYMD(b.date));
+      return d !== 0 ? d : String(a.clock_in).localeCompare(String(b.clock_in));
+    });
+
+  const statsTRIds = new Set(
+    sheetToObjects(SHEETS.SHIFT_STATS)
+      .filter(s => String(s.guard_id) === gid)
+      .map(s => s.time_record_id)
+  );
+
+  // Map shift_id → 10-hour? (template LS10 or paid_hours >= 10)
+  const shiftsById = {};
+  sheetToObjects(SHEETS.SHIFTS).forEach(s => { shiftsById[s.id] = s; });
+  const isTenHour = (rec) => {
+    const shift = rec.shift_id ? shiftsById[rec.shift_id] : null;
+    if (shift) {
+      if (shift.template_code === 'LS10') return true;
+      const tmpl = templateByCode(shift.template_code);
+      if (tmpl && parseFloat(tmpl.paid_hours) >= 10) return true;
+    }
+    // Fallback: actual logged time ≥ ~10h (paid minutes, breaks already removed)
+    return (parseInt(rec.total_minutes) || 0) >= 600;
+  };
+
+  // Current stats streak — most recent consecutive completed records that have
+  // stats. Trailing records still awaiting a card (no stats, not dismissed) are
+  // skipped rather than breaking the streak, so finishing a shift doesn't briefly
+  // zero out the count before the guard fills the card in. A dismissed/forgotten
+  // shift does end the streak.
+  let i = completed.length - 1;
+  while (i >= 0 && !statsTRIds.has(completed[i].id)
+         && String(completed[i].stats_dismissed) !== 'true') i--;
+  let statsStreak = 0;
+  for (; i >= 0; i--) {
+    if (statsTRIds.has(completed[i].id)) statsStreak++;
+    else break;
+  }
+
+  // 10-hour shifts with no auto clock-out (count, for the milestone badge).
+  const tenHourNoAuto = completed.filter(r =>
+    isTenHour(r) && String(r.auto_clocked_out) !== 'true').length;
+
+  // Most 10-hour shifts in any single Sat–Fri work week.
+  const tenHourByWeek = {};
+  completed.forEach(r => {
+    if (!isTenHour(r)) return;
+    const wk = workWeekBounds(r.date).start;
+    tenHourByWeek[wk] = (tenHourByWeek[wk] || 0) + 1;
+  });
+  const maxTenHourWeek = Object.values(tenHourByWeek).reduce((m, v) => Math.max(m, v), 0);
+
+  // Longest run of consecutive calendar days worked.
+  const workedDays = [...new Set(completed.map(r => toYMD(r.date)))].filter(Boolean).sort();
+  let maxConsecutiveDays = 0, run = 0, prev = null;
+  workedDays.forEach(day => {
+    if (prev && isNextDay_(prev, day)) run++; else run = 1;
+    if (run > maxConsecutiveDays) maxConsecutiveDays = run;
+    prev = day;
+  });
+
+  return { statsStreak, tenHourNoAuto, maxTenHourWeek, maxConsecutiveDays };
+}
+
+// True if dayB is the calendar day immediately after dayA (both YYYY-MM-DD).
+function isNextDay_(dayA, dayB) {
+  const [ay, am, ad] = dayA.split('-').map(Number);
+  const next = new Date(ay, am - 1, ad, 12);
+  next.setDate(next.getDate() + 1);
+  return serializeCell(next) === dayB;
+}
+
+function ensureBadgesSheet_() {
+  let sheet = SH(SHEETS.BADGES);
+  if (!sheet) {
+    sheet = SS().insertSheet(SHEETS.BADGES);
+    const headers = ['id','guard_id','badge_key','earned_at','meta'];
+    sheet.getRange(1, 1, 1, headers.length).setValues([headers])
+      .setBackground('#0d2137').setFontColor('#ffffff').setFontWeight('bold');
+    sheet.setFrozenRows(1);
+  }
+  return sheet;
+}
+
+// Evaluate all badges for the logged-in guard, persist any newly-earned ones,
+// and return the full display state plus the keys that were just earned.
+function getBadgeState(token) {
+  const session = getSessionFromToken(token);
+  if (!session) return { badges: [], newlyEarned: [] };
+  const guardId = String(session.guard.id);
+  ensureBadgesSheet_();
+
+  const ctx = buildBadgeCtx_(guardId);
+  const owned = {};
+  sheetToObjects(SHEETS.BADGES)
+    .filter(b => String(b.guard_id) === guardId)
+    .forEach(b => { owned[b.badge_key] = b.earned_at; });
+
+  const newlyEarned = [];
+  const badges = BADGE_DEFS.map(def => {
+    const isEarned = !!def.earned(ctx);
+    let earnedAt = owned[def.key] || '';
+    if (isEarned && !owned.hasOwnProperty(def.key)) {
+      earnedAt = new Date().toISOString();
+      appendRow(SHEETS.BADGES, {
+        id: uid('BDG'), guard_id: guardId, badge_key: def.key,
+        earned_at: earnedAt, meta: ''
+      });
+      owned[def.key] = earnedAt;
+      newlyEarned.push(def.key);
+    }
+    return {
+      key: def.key, name: def.name, emoji: def.emoji,
+      desc: def.desc, category: def.category,
+      earned: isEarned, earned_at: earnedAt,
+      progress: def.progress ? def.progress(ctx) : null
+    };
+  });
+
+  return { badges, newlyEarned };
+}
+
+// Admin: badge counts per active guard, most badges first.
+function getBadgeLeaderboard(token) {
+  requireAdmin(token);
+  ensureBadgesSheet_();
+  const rows = sheetToObjects(SHEETS.BADGES);
+  const byGuard = {};
+  rows.forEach(b => {
+    const gid = String(b.guard_id);
+    (byGuard[gid] = byGuard[gid] || []).push(b.badge_key);
+  });
+  const defByKey = {};
+  BADGE_DEFS.forEach(d => { defByKey[d.key] = d; });
+
+  return getAllGuards().map(g => {
+    const keys = byGuard[String(g.id)] || [];
+    return {
+      guard_id: g.id,
+      name: g.name,
+      count: keys.length,
+      badges: keys.map(k => defByKey[k]
+        ? { key: k, name: defByKey[k].name, emoji: defByKey[k].emoji }
+        : { key: k, name: k, emoji: '🏅' })
+    };
+  }).sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
+}
+
+function clientGetBadgeState(token)       { return getBadgeState(token); }
+function clientGetBadgeLeaderboard(token) { return getBadgeLeaderboard(token); }
 
 function clientAdminDismissLastShift(token, timeRecordId) {
   requireAdmin(token);

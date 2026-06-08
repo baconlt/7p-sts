@@ -455,6 +455,10 @@ body{font-family:'Barlow',sans-serif;background:var(--foam);color:var(--text);mi
 
 /* ── EASTER EGG: Seven Presidents modal ── */
 #sp-trigger{font-family:'Barlow Condensed',sans-serif;font-size:1.05rem;font-weight:800;letter-spacing:1px;color:var(--navy);cursor:default;user-select:none;flex-shrink:0;}
+#sp-flash{display:none;position:fixed;inset:0;z-index:9998;pointer-events:none;align-items:center;justify-content:center;}
+#sp-flash.sp-flash-active{display:flex;}
+#sp-flash-num{font-family:'Barlow Condensed',sans-serif;font-size:45vmin;font-weight:800;color:var(--sun);text-shadow:0 0 60px rgba(0,0,0,.15);opacity:0;animation:sp-flash-anim .65s ease-out forwards;}
+@keyframes sp-flash-anim{0%{opacity:.95;transform:scale(.75);}40%{opacity:.85;transform:scale(1.05);}100%{opacity:0;transform:scale(1.2);}}
 #seven-pres-backdrop{display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:10000;align-items:center;justify-content:center;padding:16px;}
 #seven-pres-backdrop.sp-open{display:flex;animation:sp-fade .25s ease;}
 @keyframes sp-fade{from{opacity:0}to{opacity:1}}
@@ -493,6 +497,16 @@ body{font-family:'Barlow',sans-serif;background:var(--foam);color:var(--text);mi
 .bg-cell.bg-marked{background:var(--wave);color:#fff;border-color:var(--wave);font-weight:600;}
 .bg-cell.bg-free{background:var(--foam);border-color:var(--sky);cursor:default;font-size:.9rem;}
 .bg-cell.bg-free.bg-marked{background:var(--sky);border-color:var(--sky);}
+/* ── Achievement badges ── */
+#badge-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(96px,1fr));gap:10px;}
+.badge{border:1.5px solid var(--border);border-radius:12px;padding:12px 8px;text-align:center;background:linear-gradient(135deg,var(--foam),#fff);transition:transform .12s,box-shadow .12s;}
+.badge:hover{transform:translateY(-2px);box-shadow:0 6px 16px rgba(13,33,55,.12);}
+.badge.locked{background:#f5f6f8;border-style:dashed;}
+.badge.locked .badge-emoji{filter:grayscale(1);opacity:.4;}
+.badge.locked .badge-name{color:var(--muted);}
+.badge-emoji{font-size:2rem;line-height:1;margin-bottom:6px;}
+.badge-name{font-weight:700;font-size:.8rem;line-height:1.15;}
+.badge-sub{font-size:.68rem;color:var(--muted);margin-top:3px;}
 </style>
 </head>
 <body>
@@ -584,6 +598,9 @@ body{font-family:'Barlow',sans-serif;background:var(--foam);color:var(--text);mi
     <div class="content" id="content"></div>
   </div>
 </div>
+
+<!-- ── EASTER EGG: countdown flash ── -->
+<div id="sp-flash"><span id="sp-flash-num"></span></div>
 
 <!-- ── EASTER EGG: Seven Presidents modal ── -->
 <div id="seven-pres-backdrop" onclick="spBackdropClick(event)">
@@ -1049,6 +1066,7 @@ let S=null, GV=false, PANEL='dashboard', IMPERSONATE=null; // IMPERSONATE = guar
 let mobAvailChanges={};
 let CLOCK_STATUS={clocked_in:false,record:null};
 let PENDING_STATS=[]; // time records needing stats forms
+let BADGES=[]; // earned + locked achievement badges for the logged-in guard
 let SNOOZED_STATS={}; // {time_record_id: snooze_until_date} // current clock-in state
 const _DISMISSED_AVAIL_KEY='sts_dismissed_avail';
 function _loadDismissedAvail(){try{return JSON.parse(localStorage.getItem(_DISMISSED_AVAIL_KEY)||'{}');}catch(e){return {};}}
@@ -1432,7 +1450,7 @@ function bgLoad(){
     // swaps removed
   }
   if(myId()) run('clientGetMySwaps',r=>{D.mySwaps=r||[];},null,myId());
-  if(!isTrueAdmin()) { loadClockStatus(); loadPendingStats(); }
+  if(!isTrueAdmin()) { loadClockStatus(); loadPendingStats(); loadBadges(); }
   if(!isTrueAdmin() && D.nextPeriod) {
     run('clientGetAvailability', r=>{ D.availNext=r||[]; }, null, D.nextPeriod.id);
   }
@@ -7101,6 +7119,39 @@ function refreshStatsAlerts() {
   }
 }
 
+let _badgesLoading = false;
+function loadBadges(cb) {
+  if (_badgesLoading) { if (cb) cb(); return; } // avoid concurrent award double-writes
+  _badgesLoading = true;
+  runG('clientGetBadgeState', r => {
+    _badgesLoading = false;
+    BADGES = (r && r.badges) || [];
+    ((r && r.newlyEarned) || []).forEach(k => {
+      const b = BADGES.find(x => x.key === k);
+      if (b) toast(`🎉 New badge: ${b.emoji} ${b.name}!`, 'ok');
+    });
+    if (PANEL === 'stats') renderBadgeGrid();
+    if (cb) cb();
+  }, () => { _badgesLoading = false; if (cb) cb(); });
+}
+
+function renderBadgeGrid() {
+  const el = document.getElementById('badge-grid'); if (!el) return;
+  if (!BADGES.length) { el.innerHTML = '<div class="muted" style="padding:8px">No badges yet — get out there! 🏖️</div>'; return; }
+  const order = [...BADGES].sort((a,b) => (b.earned?1:0)-(a.earned?1:0));
+  el.innerHTML = order.map(b => {
+    const p = b.progress;
+    const sub = b.earned
+      ? `<div class="badge-sub">${b.earned_at ? 'Earned '+fd(b.earned_at.slice(0,10)) : 'Earned'}</div>`
+      : (p ? `<div class="badge-sub">${p.current} / ${p.target}</div>` : `<div class="badge-sub">${b.desc}</div>`);
+    return `<div class="badge${b.earned?'':' locked'}" title="${b.desc}">
+      <div class="badge-emoji">${b.emoji}</div>
+      <div class="badge-name">${b.name}</div>
+      ${sub}
+    </div>`;
+  }).join('');
+}
+
 // ── Stats alert banner (shown on guard dashboard) ─────────────
 function renderStatsAlerts() {
   if (!PENDING_STATS.length) return '';
@@ -7267,6 +7318,37 @@ function showStatsModal(rec) {
       <button class="btn btn-outline" onclick="closeModal()">Cancel</button>
       <button class="btn btn-navy" onclick="submitStatsForm('${rec.id}','${rec.date||ymd(new Date())}','${rec.shift_id||''}')">Submit Stats</button>
     </div>`, true); // true = wide modal
+
+  // Restore draft if one exists for this date
+  const draftKey = `stats_draft_${rec.date || ymd(new Date())}`;
+  try {
+    const draft = JSON.parse(localStorage.getItem(draftKey) || 'null');
+    if (draft) {
+      const sv = (id, val) => { const el = document.getElementById(id); if (el && val !== undefined && val !== null) el.value = val; };
+      sv('ss-beach', draft.beach_location);
+      sv('ss-shift-sel', draft.shift_sel);
+      sv('ss-shift-other', draft.shift_other);
+      if (draft.shift_sel === 'other') toggleShiftOther('other');
+      ['preventive','bather','rfd','rfdline','seabob','firstaid','incidents','ten24','ten34','harassment','vandalism'].forEach(id => {
+        const key = {preventive:'preventive_actions',bather:'bather_assists',rfd:'rfd_rescues',rfdline:'rfd_line_rescues',seabob:'seabob_rescues',firstaid:'first_aid',incidents:'incidents',ten24:'ten_24',ten34:'ten_34',harassment:'patron_harassment',vandalism:'vandalism'}[id];
+        sv(`ss-${id}`, draft[key]);
+        if (parseInt(draft[key]) > 0) toggleDesc(id, draft[key]);
+      });
+      sv('ss-ten55', draft.ten_55);
+      ['incidents','ten24','ten34','harassment','vandalism'].forEach(id => {
+        const key = {incidents:'incidents_desc',ten24:'ten_24_desc',ten34:'ten_34_desc',harassment:'patron_harassment_desc',vandalism:'vandalism_desc'}[id];
+        sv(`ss-${id}-desc`, draft[key]);
+      });
+      (draft.training||[]).forEach(v => { const cb = document.querySelector(`.ss-training[value="${v}"]`); if(cb) cb.checked=true; });
+      (draft.flags_flown||[]).forEach(v => { const cb = document.querySelector(`.ss-flag[value="${v}"]`); if(cb) cb.checked=true; });
+      sv('ss-surf', draft.surf_condition);
+      sv('ss-wind', draft.wind_direction);
+      sv('ss-temp', draft.air_temp);
+      sv('ss-weather', draft.weather);
+      sv('ss-notes', draft.notes);
+      toast('Draft restored — review your entries and resubmit.', 'warn');
+    }
+  } catch(e) {}
 }
 
 function toggleShiftOther(val) {
@@ -7292,26 +7374,13 @@ function submitStatsForm(timeRecordId, date, shiftId) {
   const training = [...document.querySelectorAll('.ss-training:checked')].map(c=>c.value);
   const flags    = [...document.querySelectorAll('.ss-flag:checked')].map(c=>c.value);
 
-  const btn = document.querySelector('[onclick*="submitStatsForm"]');
-  if (btn) { btn.disabled=true; btn.textContent='Saving…'; }
-
-  runG('clientSubmitShiftStats', r => {
-    if (r&&r.success) {
-      toast('Stats submitted! 🏖️','ok');
-      closeModal();
-      // Remove from pending alerts
-      PENDING_STATS = PENDING_STATS.filter(x => x.id !== timeRecordId);
-      delete SNOOZED_STATS[timeRecordId];
-      refreshStatsAlerts();
-    } else {
-      if (btn) { btn.disabled=false; btn.textContent='Submit Stats'; }
-      toast(r?.message||'Failed to submit.','err');
-    }
-  }, null, {
+  const payload = {
     time_record_id:      timeRecordId,
     shift_id:            shiftVal||shiftId,
     date,
     beach_location:      beach,
+    shift_sel:           shiftSel,
+    shift_other:         document.getElementById('ss-shift-other')?.value||'',
     preventive_actions:  getNum('preventive'),
     bather_assists:      getNum('bather'),
     rfd_rescues:         getNum('rfd'),
@@ -7331,7 +7400,33 @@ function submitStatsForm(timeRecordId, date, shiftId) {
     weather:             document.getElementById('ss-weather')?.value||'',
     flags_flown:         flags,
     notes:               document.getElementById('ss-notes')?.value||''
-  });
+  };
+
+  // Save draft before network call so data survives a connection failure
+  const draftKey = `stats_draft_${date}`;
+  try { localStorage.setItem(draftKey, JSON.stringify(payload)); } catch(e) {}
+
+  const btn = document.querySelector('[onclick*="submitStatsForm"]');
+  if (btn) { btn.disabled=true; btn.textContent='Saving…'; }
+
+  const onFail = e => {
+    if (btn) { btn.disabled=false; btn.textContent='Submit Stats'; }
+    toast('⚠️ Save failed — your entries are still here. Check your connection and try again.', 'err');
+  };
+
+  runG('clientSubmitShiftStats', r => {
+    if (r&&r.success) {
+      try { localStorage.removeItem(draftKey); } catch(e) {}
+      toast('Stats submitted! 🏖️','ok');
+      closeModal();
+      PENDING_STATS = PENDING_STATS.filter(x => x.id !== timeRecordId);
+      delete SNOOZED_STATS[timeRecordId];
+      refreshStatsAlerts();
+      loadBadges(); // a fresh stats card may complete a streak badge
+    } else {
+      onFail(r);
+    }
+  }, onFail, payload);
 }
 
 // ── Guard: My Stats page ──────────────────────────────────────
@@ -7350,9 +7445,14 @@ R['stats'] = function() {
     <div id="my-stats-list"><div class="muted" style="padding:20px">Loading…</div></div>
     <div style="margin-top:12px">
       <button class="btn btn-navy btn-sm" onclick="openStatsForm('')">+ Submit Stats for Today</button>
+    </div>
+    <div class="card" style="margin-top:14px;padding:14px">
+      <div class="card-title">🏅 Achievements</div>
+      <div id="badge-grid"><div class="muted" style="padding:8px">Loading…</div></div>
     </div>`;
 
   if (D.activePeriod) loadMyStats(D.activePeriod.id);
+  if (BADGES.length) renderBadgeGrid(); else loadBadges();
 };
 
 function loadMyStats(periodId) {
@@ -7418,10 +7518,30 @@ R['stats-admin'] = function() {
         <span id="stats-date-label" style="color:var(--muted);font-size:.82rem"></span>
       </div>
     </div>
-    <div id="admin-stats-content"><div class="muted" style="padding:20px">Loading…</div></div>`;
+    <div id="admin-stats-content"><div class="muted" style="padding:20px">Loading…</div></div>
+    <div class="card" style="margin-top:14px;padding:14px">
+      <div class="card-title">🏅 Badge Leaderboard</div>
+      <div id="badge-leaderboard"><div class="muted" style="padding:8px">Loading…</div></div>
+    </div>`;
 
   loadAdminStatsData();
+  loadBadgeLeaderboard();
 };
+
+function loadBadgeLeaderboard() {
+  arun('clientGetBadgeLeaderboard', rows => {
+    const el = document.getElementById('badge-leaderboard'); if (!el) return;
+    const earners = (rows || []).filter(r => r.count > 0);
+    if (!earners.length) { el.innerHTML = '<div class="muted" style="padding:8px">No badges earned yet.</div>'; return; }
+    el.innerHTML = earners.map(r => `<div class="flex between items-c" style="padding:7px 4px;border-bottom:1px solid var(--border)">
+        <div style="font-weight:600;font-size:.86rem">${r.name}</div>
+        <div style="display:flex;align-items:center;gap:8px">
+          <span style="font-size:1rem;letter-spacing:1px">${r.badges.map(b=>`<span title="${b.name}">${b.emoji}</span>`).join('')}</span>
+          <span class="muted" style="font-size:.78rem">${r.count}</span>
+        </div>
+      </div>`).join('');
+  });
+}
 
 function shiftStatsDate(delta) {
   const d = new Date(_adminStatsDate + 'T12:00:00');
@@ -7778,10 +7898,10 @@ function exportStatsCSV() {
 // ══════════════════════════════════════════
 
 // EASTER EGG — Seven Presidents
-// Tap/click the sidebar logo 7 times within 3 seconds to reveal.
+// Tap/click the sidebar logo 7 times (any pace, session-persistent) to reveal.
 // ══════════════════════════════════════════════════
 (function() {
-  var _spCount = 0, _spTimer = null;
+  var _spCount = 0;
 
   function spOpen() {
     document.getElementById('seven-pres-backdrop').classList.add('sp-open');
@@ -7803,7 +7923,20 @@ function exportStatsCSV() {
 
   function spReset() {
     _spCount = 0;
-    if (_spTimer) { clearTimeout(_spTimer); _spTimer = null; }
+  }
+
+  function spFlash(num, callback) {
+    var wrap = document.getElementById('sp-flash');
+    var numEl = document.getElementById('sp-flash-num');
+    numEl.textContent = num;
+    wrap.classList.add('sp-flash-active');
+    numEl.style.animation = 'none';
+    numEl.offsetHeight; // force reflow to restart animation
+    numEl.style.animation = '';
+    setTimeout(function() {
+      wrap.classList.remove('sp-flash-active');
+      if (callback) callback();
+    }, 650);
   }
 
   document.addEventListener('DOMContentLoaded', function() {
@@ -7811,12 +7944,10 @@ function exportStatsCSV() {
     if (!logo) return;
     logo.addEventListener('click', function() {
       _spCount++;
-      if (_spCount === 1) {
-        _spTimer = setTimeout(spReset, 3000);
-      }
       if (_spCount >= 7) {
-        spReset();
-        spOpen();
+        spFlash(1, function() { spReset(); spOpen(); });
+      } else {
+        spFlash(8 - _spCount);
       }
     });
   });
