@@ -129,7 +129,7 @@ body{font-family:'Barlow',sans-serif;background:var(--foam);color:var(--text);mi
 /* ── SHIFT CHIPS ── */
 .chip{display:inline-block;padding:2px 6px;border-radius:4px;font-size:.72rem;font-weight:700;}
 .chip-8HR{background:#dbeafe;color:#1e40af;} .chip-LS8{background:#ede9fe;color:#5b21b6;}
-.chip-LSO{background:#fce7f3;color:#9d174d;} .chip-LS10{background:#d1fae5;color:#065f46;}
+.chip-LS{background:#fce7f3;color:#9d174d;} .chip-LS10{background:#d1fae5;color:#065f46;}
 .chip-SPEC{background:#fef3c7;color:#92400e;} .chip-MISC{background:#f3f4f6;color:#374151;}
 
 /* ══════════════════════════════════════════════════
@@ -196,8 +196,8 @@ body{font-family:'Barlow',sans-serif;background:var(--foam);color:var(--text);mi
 /* Cell availability tints — shown when no shift assigned */
 .av-tint-S_8HR    {background:#eff6ff;}
 .av-tint-S_LS8    {background:#f5f3ff;}
-.av-tint-S_LSO    {background:#ecfeff;}
-.av-tint-S_8HR_LSO{background:#e0f2fe;}
+.av-tint-S_LS    {background:#ecfeff;}
+.av-tint-S_8HR_LS{background:#e0f2fe;}
 .av-tint-S_SPEC   {background:#fff7ed;}
 .av-tint-FLEX_OFF {background:#fefce8;}
 .av-tint-FIXED_OFF{background:#fff1f2;}
@@ -266,8 +266,8 @@ body{font-family:'Barlow',sans-serif;background:var(--foam);color:var(--text);mi
 .avail-chip:hover{opacity:.85;transform:scale(1.03);}
 .av-S_8HR    {background:#dbeafe;color:#1e40af;}
 .av-S_LS8    {background:#ede9fe;color:#5b21b6;}
-.av-S_LSO    {background:#cffafe;color:#155e75;}
-.av-S_8HR_LSO{background:#bae6fd;color:#0c4a6e;}
+.av-S_LS    {background:#cffafe;color:#155e75;}
+.av-S_8HR_LS{background:#bae6fd;color:#0c4a6e;}
 .av-S_SPEC   {background:#ffedd5;color:#9a3412;}
 .av-FLEX_OFF {background:#fef9c3;color:#713f12;}
 .av-FIXED_OFF{background:#fee2e2;color:#991b1b;}
@@ -499,14 +499,18 @@ body{font-family:'Barlow',sans-serif;background:var(--foam);color:var(--text);mi
 .bg-cell.bg-free.bg-marked{background:var(--sky);border-color:var(--sky);}
 /* ── Achievement badges ── */
 #badge-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(96px,1fr));gap:10px;}
-.badge{border:1.5px solid var(--border);border-radius:12px;padding:12px 8px;text-align:center;background:linear-gradient(135deg,var(--foam),#fff);transition:transform .12s,box-shadow .12s;}
+.badge{border:1.5px solid var(--border);border-radius:12px;padding:12px 8px;text-align:center;background:linear-gradient(135deg,var(--foam),#fff);transition:transform .12s,box-shadow .12s;cursor:pointer;}
 .badge:hover{transform:translateY(-2px);box-shadow:0 6px 16px rgba(13,33,55,.12);}
-.badge.locked{background:#f5f6f8;border-style:dashed;}
+.badge:not(.locked){border-color:var(--sun);box-shadow:0 0 16px 3px rgba(247,183,49,.8);}
+.badge:not(.locked):hover{transform:translateY(-2px);box-shadow:0 4px 22px 4px rgba(247,183,49,.9);}
+.badge.locked{background:#f5f6f8;border-style:dashed;box-shadow:none;}
 .badge.locked .badge-emoji{filter:grayscale(1);opacity:.4;}
 .badge.locked .badge-name{color:var(--muted);}
 .badge-emoji{font-size:2rem;line-height:1;margin-bottom:6px;}
 .badge-name{font-weight:700;font-size:.8rem;line-height:1.15;}
 .badge-sub{font-size:.68rem;color:var(--muted);margin-top:3px;}
+.badge-bar{height:8px;border-radius:6px;background:var(--border);overflow:hidden;}
+.badge-bar-fill{height:100%;border-radius:6px;background:linear-gradient(90deg,var(--wave),var(--navy));transition:width .3s;}
 </style>
 </head>
 <body>
@@ -921,8 +925,8 @@ function postTextColor(hex){
 const AV_COLORS = {
   S_8HR:        '#2176ae',   // regular only
   S_LS8:        '#7c3aed',   // late shift LS8
-  S_LSO:        '#0891b2',   // late shift only (LSO)
-  S_8HR_LSO:    '#0e7490',   // regular + late shift only (saves two rows)
+  S_LS:        '#0891b2',   // late shift (LS)
+  S_8HR_LS:    '#0e7490',   // regular + late shift (saves two rows)
   S_SPEC:       '#ea580c',   // special/custom
   FLEX_OFF:     '#ca8a04',   // preferred off, flexible
   FIXED_OFF:    '#dc2626',   // hard day off
@@ -931,8 +935,8 @@ const AV_COLORS = {
 const AV_LABELS = {
   S_8HR:        '8HR',
   S_LS8:        'LS8',
-  S_LSO:        'LSO',
-  S_8HR_LSO:    '8HR + LSO',
+  S_LS:        'LS',
+  S_8HR_LS:    '8HR + LS',
   S_SPEC:       'Special',
   FLEX_OFF:     'Flex Day Off',
   FIXED_OFF:    'Day Off',
@@ -941,33 +945,33 @@ const AV_LABELS = {
 const AV_SHORT = {
   S_8HR:        '8HR',
   S_LS8:        'LS8',
-  S_LSO:        'LSO',
-  S_8HR_LSO:    '8HR+LSO',
+  S_LS:        'LS',
+  S_8HR_LS:    '8HR+LS',
   S_SPEC:       'Special',
   FLEX_OFF:     'Flex',
   FIXED_OFF:    'Off',
   S_8HR_OT:     'OT',
 };
 // Templates shown in assign/edit shift dropdowns
-const ASSIGN_TMPL_CODES = ['8HR','LS8','LSO','SPEC','TOURN'];
+const ASSIGN_TMPL_CODES = ['8HR','LS8','LS','SPEC','TOURN'];
 // Which statuses include late shift availability
-const AV_LATE = new Set(['S_LS8','S_LSO','S_8HR_LSO']);
+const AV_LATE = new Set(['S_LS8','S_LS','S_8HR_LS']);
 // Which statuses mean guard is available at all
-const AV_AVAIL = new Set(['S_8HR','S_LS8','S_LSO','S_8HR_LSO','S_SPEC','S_8HR_OT']);
+const AV_AVAIL = new Set(['S_8HR','S_LS8','S_LS','S_8HR_LS','S_SPEC','S_8HR_OT']);
 // Regular-shift statuses that count toward the 40-hour availability limit (S_SPEC excluded — custom hours TBD)
 const AV_REGULAR = new Set(['S_8HR','S_8HR_OT']);
 // Senior ranks required for late shifts
 const LATE_SENIOR = ['Lifeguard Supervisor','Crew Captain','Captain','Beach Captain','Lieutenant'];
 
 // Build {date: status} map for a period, merging saved + pending changes.
-// Excludes S_LSO companion rows (late-only, never count as regular hours).
+// Excludes S_LS companion rows (late-only, never count as regular hours).
 function getEffectiveAvailMap(viewPeriod, changesObj) {
   const map = {};
   const viewArr = getAvailView();
   const gid = String(myId());
   dateRange(viewPeriod.start_date, viewPeriod.schedule_thru).forEach(d => {
     const ds = ymd(d);
-    const saved = viewArr.find(a => String(a.guard_id) === gid && a.date === ds && a.status !== 'S_LSO');
+    const saved = viewArr.find(a => String(a.guard_id) === gid && a.date === ds && a.status !== 'S_LS');
     if (saved) map[ds] = saved.status;
   });
   Object.entries(changesObj || {}).forEach(([k, v]) => {
@@ -1056,6 +1060,42 @@ function fmtTime(val){
   // Unknown format — log it so we can fix it
   console.warn('STS fmtTime: unhandled format:', JSON.stringify(val));
   return s;
+}
+
+// Convert any supported time value to minutes-since-midnight (reuses fmtTime's parsing). null if unknown.
+function timeToMin(val){
+  const m=String(fmtTime(val)).match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i);
+  if(!m) return null;
+  let h=parseInt(m[1])%12; if(/PM/i.test(m[3])) h+=12;
+  return h*60+parseInt(m[2]);
+}
+// End time of a shift in minutes-since-midnight (SPEC uses custom_end, else its template). null if unknown.
+function shiftEndMin(shift){
+  if(shift.template_code==='SPEC'&&shift.custom_end) return timeToMin(shift.custom_end);
+  const t=D.templates.find(x=>x.code===shift.template_code);
+  return t?timeToMin(t.end_time):null;
+}
+// Start time of a shift in minutes-since-midnight (custom_start overrides template). null if unknown.
+function shiftStartMin(shift){
+  if(shift.custom_start) return timeToMin(shift.custom_start);
+  const t=D.templates.find(x=>x.code===shift.template_code);
+  return t?timeToMin(t.start_time):null;
+}
+// Sort shifts by date ascending, then earliest start time first (unknown times last).
+function shiftSort(a,b){
+  if(a.date!==b.date) return a.date>b.date?1:-1;
+  const sa=shiftStartMin(a),sb=shiftStartMin(b);
+  if(sa==null&&sb==null) return 0;
+  if(sa==null) return 1;
+  if(sb==null) return -1;
+  return sa-sb;
+}
+// Late shift = an LS-type template, or any shift ending at/after 7:15 PM.
+const LATE_TMPL=new Set(['LS8','LS','LS10']);
+function isLateShift(shift){
+  if(LATE_TMPL.has(shift.template_code)) return true;
+  const em=shiftEndMin(shift);
+  return em!=null && em>=19*60+15; // 7:15 PM
 }
 
 
@@ -1473,11 +1513,17 @@ function doImpersonate(){
   IMPERSONATE=guard;
   GV=false; // always clear guard view toggle when impersonating
   setSidebarUser(); buildSidebar();
-  // Reload avail data so filters reflect impersonated guard
+  // Load the same availability data the guard's own app loads (active + next period),
+  // so the impersonated dashboard/schedule matches exactly what the guard sees.
+  const _go=()=>go('dashboard');
   if(D.activePeriod){
-    run('clientGetAvailability',r=>{D.avail=r||[];go('dashboard');},null,D.activePeriod.id);
+    run('clientGetAvailability',r=>{
+      D.avail=r||[];
+      if(D.nextPeriod){ run('clientGetAvailability',r2=>{D.availNext=r2||[];_go();},_go,D.nextPeriod.id); }
+      else _go();
+    },_go,D.activePeriod.id);
   } else {
-    go('dashboard');
+    _go();
   }
   toast(`Impersonating ${guard.name}`,'warn');
 }
@@ -1506,7 +1552,7 @@ function buildSidebar(){
     </div>`;
   }
   if(adm){
-    h+=navItem('dashboard','📊','Dashboard')+navItem('schedule','📅','Schedule')+navItem('full-schedule-admin','📋','Full Schedule')+
+    h+=navItem('dashboard','📊','Dashboard')+navItem('full-schedule-admin','📅','Full Schedule')+
        navItem('shifts','🗂','Shift Manager')+navItem('time-records','⏱','Time Records')+navItem('stats-admin','📈','Stats')+`<div class="nav-label">Roster</div>`+navItem('guards','👥','Guards')+navItem('posts','🗼','Posts')+
        navItem('board','📺','Board');
     if(S.role==='admin') h+=`<div class="nav-label">Settings</div>`+navItem('periods','💰','Pay Periods')+navItem('locations','📍','Locations')+navItem('config','⚙️','Config');
@@ -1549,8 +1595,9 @@ function go(panel){
   document.getElementById('content').innerHTML='';
   closeSidebar(); buildSidebar();
 
-  // Mobile guard: use mobile renderers (not when impersonating — stay in desktop mode)
-  if(isMobile() && !isAdmin() && !IMPERSONATE){
+  // Guard mobile renderers. Real guards get these on a phone; impersonation always
+  // uses them (regardless of admin device) so the admin sees the exact phone screen guards use.
+  if(!isAdmin() && (IMPERSONATE || isMobile())){
     showMobTabs();
     if(panel==='dashboard')    { renderMobGuardDash(); return; }
     if(panel==='my-schedule')  { renderMobMySchedule(); return; }
@@ -1600,7 +1647,7 @@ R.dashboard=function(){
             <div><span class="muted">Payroll due:</span> <strong>${fd(D.activePeriod.payroll_due)||'—'}</strong></div>
           </div>
           <div class="flex gap2 wrap mt2">
-            <button class="btn btn-wave btn-sm" onclick="go('schedule')">📅 Schedule</button>
+            <button class="btn btn-wave btn-sm" onclick="go('full-schedule-admin')">📅 Schedule</button>
             <button class="btn btn-green btn-sm" onclick="doPublish('${D.activePeriod.id}')">📢 Publish</button>
             ${D.activePeriod.locked!=='true'?`<button class="btn btn-outline btn-sm" onclick="doLockPeriod('${D.activePeriod.id}')">🔒 Lock</button>`:`<span class="badge b-denied">🔒 Locked</span>`}
           </div>`:
@@ -1625,6 +1672,9 @@ R.dashboard=function(){
     loadClockedOutCard();
     loadDashStatsCount();
     loadYesterdayCard();
+  } else if(IMPERSONATE || isMobile()){
+    // Guards use the phone view; impersonation mirrors it so admins see the exact guard screen.
+    renderMobGuardDash();
   } else {
     renderGuardDash(el);
   }
@@ -1640,11 +1690,11 @@ function renderGuardDash(el){
   const gid=String(myId()), today=ymd(new Date());
   const mine=D.shifts.filter(s=>String(s.assigned_guard_id)===gid&&s.status!=='cancelled');
   const todayShifts=mine.filter(s=>s.date===today);
-  const upcoming=mine.filter(s=>s.date>=today).sort((a,b)=>a.date>b.date?1:-1);
+  const upcoming=mine.filter(s=>s.date>=today).sort(shiftSort);
   const _upcomingDates=new Set(upcoming.map(s=>s.date));
   const _allAvailOffSeen=new Set();
   const _allAvailOff=[...(D.avail||[]),...(D.availNext||[])].filter(a=>{
-    if(!( String(a.guard_id)===gid&&a.date>=today&&!_upcomingDates.has(a.date)&&(a.status==='FIXED_OFF'||a.status==='FLEX_OFF')))return false;
+    if(!( String(a.guard_id)===gid&&a.date>=today&&!_upcomingDates.has(a.date)&&a.status==='FIXED_OFF'))return false;
     if(_allAvailOffSeen.has(a.date))return false;
     _allAvailOffSeen.add(a.date);return true;
   });
@@ -1750,15 +1800,21 @@ function cycleSchedView(){
   renderSchedGrid();
 }
 
+function _reqDeniedChip(avEntry){
+  const req=avEntry&&avEntry.requested_status;
+  if(!req) return '';
+  return `<span style="font-size:.55rem;font-weight:700;color:#475569;background:#e2e8f0;border-radius:3px;padding:0 3px;margin-left:3px;white-space:nowrap" title="Originally requested ${AV_LABELS[req]||req} — overridden by day off">req ${AV_LATE.has(req)?'🌙':''}${AV_SHORT[req]||req}</span>`;
+}
 function _adminOffChip(avStatus,avEntry,gid,ds){
+  const reqChip=_reqDeniedChip(avEntry);
   if(avStatus==='FIXED_OFF'){
     const hasFlex=avEntry&&avEntry.notes==='guard_flex';
     const userNote=avEntry&&avEntry.notes&&avEntry.notes!=='guard_flex'?avEntry.notes:'';
-    return`<div style="align-self:flex-start;background:#fee2e2;border-left:2px solid #dc2626;border-radius:3px;padding:2px 5px;margin:1px;cursor:pointer;font-size:.68rem;font-weight:700;color:#dc2626;display:inline-flex;align-items:center;gap:3px" onclick="cellClick('${gid}','${ds}',event)" title="Day off${userNote?' — '+userNote:''} — click to change">Day Off${hasFlex?'<span style="color:#d97706;font-size:.6rem">~Flex</span>':''}${userNote?`<span style="font-size:.6rem;font-weight:400;color:#dc2626;opacity:.8">${userNote}</span>`:''}</div>`;
+    return`<div style="align-self:flex-start;background:#fee2e2;border-left:2px solid #dc2626;border-radius:3px;padding:2px 5px;margin:1px;cursor:pointer;font-size:.68rem;font-weight:700;color:#dc2626;display:inline-flex;align-items:center;gap:3px;flex-wrap:wrap" onclick="cellClick('${gid}','${ds}',event)" title="Day off${userNote?' — '+userNote:''} — click to change">Day Off${hasFlex?'<span style="color:#d97706;font-size:.6rem">~Flex</span>':''}${userNote?`<span style="font-size:.6rem;font-weight:400;color:#dc2626;opacity:.8">${userNote}</span>`:''}${reqChip}</div>`;
   }
   if(avStatus==='FLEX_OFF'){
     const userNote=avEntry&&avEntry.notes&&avEntry.notes!=='guard_flex'?avEntry.notes:'';
-    return`<div style="align-self:flex-start;background:#fef9c3;border-left:2px solid #ca8a04;border-radius:3px;padding:2px 5px;margin:1px;cursor:pointer;font-size:.68rem;font-weight:700;color:#92400e" onclick="cellClick('${gid}','${ds}',event)" title="Guard prefers off (flexible)${userNote?' — '+userNote:''} — click to change">〜 Flex${userNote?`<span style="font-size:.6rem;font-weight:400;color:#92400e;opacity:.8">${userNote}</span>`:''}</div>`;
+    return`<div style="align-self:flex-start;background:#fef9c3;border-left:2px solid #ca8a04;border-radius:3px;padding:2px 5px;margin:1px;cursor:pointer;font-size:.68rem;font-weight:700;color:#92400e;display:inline-flex;align-items:center;gap:3px;flex-wrap:wrap" onclick="cellClick('${gid}','${ds}',event)" title="Guard prefers off (flexible)${userNote?' — '+userNote:''} — click to change">〜 Flex${userNote?`<span style="font-size:.6rem;font-weight:400;color:#92400e;opacity:.8">${userNote}</span>`:''}${reqChip}</div>`;
   }
   return avStatus?`<div style="font-size:.6rem;font-weight:700;color:${AV_COLORS[avStatus]||'#ccc'};padding:0 2px 1px;line-height:1.3">${AV_LATE.has(avStatus)?'🌙 ':''}${AV_SHORT[avStatus]||avStatus}</div>`:'';
 }
@@ -1795,7 +1851,7 @@ function renderSchedGrid(){
     // Group by template code
     const dayShifts=D.shifts.filter(s=>s.date===ds&&s.status!=='cancelled');
     const tmplCodes=[...new Set(dayShifts.map(s=>s.template_code))].filter(Boolean);
-    const lateShifts=dayShifts.filter(s=>['LS8','LSO','LS10'].includes(s.template_code));
+    const lateShifts=dayShifts.filter(s=>['LS8','LS','LS10'].includes(s.template_code));
     const lateAvailGuards=D.avail.filter(a=>a.date===ds&&AV_LATE.has(a.status));
     const seniorLateAvail=lateAvailGuards.some(a=>{const g=D.guards.find(x=>String(x.id)===String(a.guard_id));return g&&LATE_SENIOR.includes(g.rank);});
     const lateWarning=lateShifts.length>0&&lateAvailGuards.length>0&&!seniorLateAvail?'⚠️':'';
@@ -1886,7 +1942,7 @@ function renderSchedGrid(){
         const slotItems=slotGroups.map(sg=>{
           const p=D.posts.find(x=>x.id===sg.post_id);
           const pc=postColor(sg.post_id);
-          const isLateSlot=['LS8','LSO','LS10'].includes(sg.template_code);
+          const isLateSlot=['LS8','LS','LS10'].includes(sg.template_code);
           return`<div onclick="cellClickWithSlot('${gid}','${ds}','${sg.post_id}','${sg.template_code}',event)"
             style="background:${pc}18;border-left:2px solid ${pc};border-radius:3px;padding:2px 4px;margin:1px;cursor:pointer;font-size:.65rem;font-weight:700;color:${pc};white-space:nowrap;overflow:hidden;text-overflow:ellipsis"
             title="${p?p.name:''} ${sg.template_code} (${sg.count} open)">
@@ -1927,10 +1983,10 @@ function renderSchedGrid(){
       const ds=ymd(d),isSat=d.getDay()===6,isFri=d.getDay()===5;
       const satBorder=isSat?'border-left:3px solid var(--ocean) !important;':'';
       const avEntry=D.avail.find(a=>String(a.guard_id)===gid&&a.date===ds);
-      // Also check for companion LSO entry (8HR+LSO combo)
-      const avEntryLso=D.avail.find(a=>String(a.guard_id)===gid&&a.date===ds&&a.status==='S_LSO');
+      // Also check for companion LS entry (8HR+LS combo)
+      const avEntryLso=D.avail.find(a=>String(a.guard_id)===gid&&a.date===ds&&a.status==='S_LS');
       const rawSt=avEntry?avEntry.status:null;
-      const avStatus=(rawSt==='S_8HR'&&avEntryLso)?'S_8HR_LSO':rawSt;
+      const avStatus=(rawSt==='S_8HR'&&avEntryLso)?'S_8HR_LS':rawSt;
       const isOff=avStatus==='FIXED_OFF'||avStatus==='FLEX_OFF';
       const bg=isOff?'#fef2f2':avStatus?AV_COLORS[avStatus]+'11':'#f9fafb';
       const textColor=isOff?'#dc2626':avStatus?AV_COLORS[avStatus]:'#d1d5db';
@@ -2017,6 +2073,9 @@ R['full-schedule-admin']=function(){
     <button class="btn btn-outline btn-sm" onclick="showBulkCreateModal()">⚡ Bulk Create</button>
     <button class="btn btn-green btn-sm" onclick="doPublish('${D.activePeriod?.id}')">📢 Publish</button>`;
   const el=document.getElementById('content');
+  // Preserve grid scroll position across re-render (e.g. after editing a shift)
+  const _prevWrap=el.querySelector('.fsa-wrap');
+  const _prevScroll=_prevWrap?{l:_prevWrap.scrollLeft,t:_prevWrap.scrollTop}:null;
   if(!D.activePeriod){el.innerHTML='<div class="card"><p class="muted">No active pay period.</p></div>';return;}
   const dates=dateRange(D.activePeriod.start_date,D.activePeriod.schedule_thru);
   const today=ymd(new Date());
@@ -2030,12 +2089,27 @@ R['full-schedule-admin']=function(){
   const colW=mob?'58px':'90px';
 
   const colLabel=FSA_VIEW==='guard'?'Guard':'Post / Guard';
+  const adminCountByDate={},guardCountByDate={},lateCountByDate={};
+  if(FSA_VIEW==='guard'){
+    const adminPostIds=new Set(D.posts.filter(p=>p.name.trim().toLowerCase()==='admin').map(p=>p.id));
+    dates.forEach(d=>{
+      const ds=ymd(d);
+      const dayShifts=D.shifts.filter(s=>s.date===ds&&s.assigned_guard_id&&s.status!=='cancelled');
+      const adminIds=new Set(dayShifts.filter(s=>adminPostIds.has(s.post_id)).map(s=>String(s.assigned_guard_id)));
+      const guardIds=new Set(dayShifts.filter(s=>!adminPostIds.has(s.post_id)).map(s=>String(s.assigned_guard_id)));
+      adminIds.forEach(id=>guardIds.delete(id)); // anyone on an admin shift doesn't count toward guards in
+      adminCountByDate[ds]=adminIds.size;
+      guardCountByDate[ds]=guardIds.size;
+      lateCountByDate[ds]=new Set(dayShifts.filter(isLateShift).map(s=>String(s.assigned_guard_id))).size;
+    });
+  }
   let th=`<tr><th style="background:var(--navy);color:#fff;padding:8px 10px;text-align:left;position:sticky;left:0;z-index:20;min-width:${nameW}">${colLabel}</th>`;
   dates.forEach(d=>{
     const ds=ymd(d),hol=holiday(ds),we=isWE(ds),isT=ds===today,isSat=d.getDay()===6;
     const cls=isT?'th-today':hol?'th-holiday':we?'th-weekend':'th-normal';
     const satStyle=isSat?'border-left:3px solid #57a0d3;':'';
-    th+=`<th class="${cls}" style="min-width:${colW};${satStyle}">${DAYS[d.getDay()]}<br>${MONTHS[d.getMonth()]} ${d.getDate()}</th>`;
+    const cntLine=FSA_VIEW==='guard'?`<div style="font-size:.6rem;font-weight:700;opacity:.9;margin-top:2px;line-height:1.4" title="Admins · Guards in · Late shift">👔 ${adminCountByDate[ds]} · 👥 ${guardCountByDate[ds]} · 🌙 ${lateCountByDate[ds]}</div>`:'';
+    th+=`<th class="${cls}" style="min-width:${colW};${satStyle}">${DAYS[d.getDay()]}<br>${MONTHS[d.getMonth()]} ${d.getDate()}${cntLine}</th>`;
   });
   th+=`</tr>`;
 
@@ -2155,7 +2229,12 @@ R['full-schedule-admin']=function(){
               <div style="font-size:.6rem;color:var(--text);opacity:.75;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:72px">${abbr}</div>
             </div>`;
           }).join('');
-          return`<td class="cell-assigned ${colCls}" style="${satBorder}padding:2px;vertical-align:top">${chips}</td>`;
+          // Guard requested a late shift but none of their assigned shifts that day is a late shift
+          const wantsLate=D.avail.some(a=>String(a.guard_id)===gid&&a.date===ds&&AV_LATE.has(a.status));
+          const lsUnfilled=wantsLate&&!dayShifts.some(isLateShift)
+            ?`<div onclick="cellClick('${gid}','${ds}',event)" title="Late shift requested — not yet assigned" style="font-size:.58rem;font-weight:700;color:#b45309;background:#fffbeb;border:1px dashed #f59e0b;border-radius:3px;padding:1px 3px;margin-top:1px;text-align:center;cursor:pointer">🌙 LS open</div>`
+            :'';
+          return`<td class="cell-assigned ${colCls}" style="${satBorder}padding:2px;vertical-align:top">${chips}${lsUnfilled}</td>`;
         }
         const avEntry=D.avail.find(a=>String(a.guard_id)===gid&&a.date===ds);
         const avStatus=avEntry?avEntry.status:null;
@@ -2187,6 +2266,7 @@ R['full-schedule-admin']=function(){
         <table class="sg${mob?' mob':''}"><thead>${th}</thead><tbody>${tb}</tbody></table>
       </div>
     </div>`;
+  if(_prevScroll){const w=el.querySelector('.fsa-wrap');if(w){w.scrollLeft=_prevScroll.l;w.scrollTop=_prevScroll.t;}}
 };
 
 // ══════════════════════════════════════════
@@ -2424,7 +2504,7 @@ function cellClick(guardId,dateStr,event){
             +'</div>'
             +(avEntry.notes?'<div style="font-size:.75rem;color:#64748b;margin-bottom:8px">Note: '+avEntry.notes+'</div>':'')
             +'<button class="btn btn-wave btn-sm" style="margin-bottom:10px" onclick="adminSaveMobSpecialTimes(\''+gid+'\',\''+dateStr+'\',this)">Save Times</button>'
-          :'<div style="color:'+AV_COLORS[_avS]+';font-weight:600;margin-bottom:'+((_avS==='FIXED_OFF'||_avS==='FLEX_OFF')&&avEntry.notes&&avEntry.notes!=='guard_flex'?'4':'10')+'px">'+(AV_LATE.has(_avS)?'🌙 ':'')+AV_LABELS[_avS]+'</div>'+((_avS==='FIXED_OFF'||_avS==='FLEX_OFF')&&avEntry.notes&&avEntry.notes!=='guard_flex'?'<div style="font-size:.75rem;color:#64748b;margin-bottom:10px">Note: '+avEntry.notes+'</div>':''))
+          :'<div style="color:'+AV_COLORS[_avS]+';font-weight:600;margin-bottom:'+((avEntry.requested_status||((_avS==='FIXED_OFF'||_avS==='FLEX_OFF')&&avEntry.notes&&avEntry.notes!=='guard_flex'))?'4':'10')+'px">'+(AV_LATE.has(_avS)?'🌙 ':'')+AV_LABELS[_avS]+'</div>'+(avEntry.requested_status?'<div style="font-size:.75rem;color:#64748b;margin-bottom:10px">Originally requested: <b style="color:'+(AV_COLORS[avEntry.requested_status]||'inherit')+'">'+(AV_LATE.has(avEntry.requested_status)?'🌙 ':'')+(AV_LABELS[avEntry.requested_status]||avEntry.requested_status)+'</b></div>':'')+((_avS==='FIXED_OFF'||_avS==='FLEX_OFF')&&avEntry.notes&&avEntry.notes!=='guard_flex'?'<div style="font-size:.75rem;color:#64748b;margin-bottom:10px">Note: '+avEntry.notes+'</div>':''))
         :'<div class="muted" style="margin-bottom:10px">No availability set — can still assign</div>';
       const _mIsSpec=_avS==='S_SPEC';
       const _mSpecTimes=_mIsSpec?'':
@@ -2437,8 +2517,14 @@ function cellClick(guardId,dateStr,event){
           '</div>'+
         '</div>';
       const _mTmplSel=D.templates.filter(x=>ASSIGN_TMPL_CODES.includes(x.code)).map(x=>'<option value="'+x.code+'"'+(_mIsSpec&&x.code==='SPEC'?' selected':'')+'>'+x.name+' ('+fmtTime(x.start_time)+'–'+fmtTime(x.end_time)+')</option>').join('');
+      const _mIsOff=avEntry&&(_avS==='FIXED_OFF'||_avS==='FLEX_OFF');
+      const _mOffActions=_mIsOff?
+        '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px">'+
+          (avEntry.requested_status?'<button class="btn btn-outline btn-sm" onclick="doRestoreRequest(\''+gid+'\',\''+dateStr+'\')">↩ Restore '+(AV_LATE.has(avEntry.requested_status)?'🌙 ':'')+(AV_SHORT[avEntry.requested_status]||avEntry.requested_status)+'</button>':'')+
+          '<button class="btn btn-outline btn-sm" onclick="doRemoveDayOff(\''+gid+'\',\''+dateStr+'\')">✕ Remove Day Off</button>'+
+        '</div>':'';
       openBSheet(guard?guard.name+' — '+fd(dateStr):gid+' — '+fd(dateStr),
-        avNote+
+        avNote+_mOffActions+
         '<div id="bap-post-wrap"><div class="fg"><label>Post</label><select id="bap-post" class="sel">'+D.posts.map(x=>'<option value="'+x.id+'">'+x.name+'</option>').join('')+'</select></div></div>'+
         '<div class="fg"><label>Template</label><select id="bap-tmpl" class="sel" onchange="onBshTmplChange(this)">'+_mTmplSel+'<option value="DAY_OFF">─ Mark Day Off ─</option></select></div>'+
         _mSpecTimes+
@@ -2503,7 +2589,7 @@ function cellClick(guardId,dateStr,event){
              ${avEntry.notes?`<div style="font-size:.75rem;color:var(--muted)">Note: ${avEntry.notes}</div>`:''}
              <button class="btn btn-sm btn-wave" onclick="adminSaveSpecialTimes('${gid}','${dateStr}',this)" id="adm-sp-save-${gid}-${dateStr}">Save Times</button>
            </div>`
-        :`<div class="pop-header" style="padding-top:0;color:${AV_COLORS[avEntry.status]}">${AV_LATE.has(avEntry.status)?'🌙 ':''}${AV_LABELS[avEntry.status]||avEntry.status}</div>${(avEntry.status==='FIXED_OFF'||avEntry.status==='FLEX_OFF')&&avEntry.notes&&avEntry.notes!=='guard_flex'?`<div style="font-size:.75rem;color:var(--muted);padding:0 12px 8px">Note: ${avEntry.notes}</div>`:''}`)
+        :`<div class="pop-header" style="padding-top:0;color:${AV_COLORS[avEntry.status]}">${AV_LATE.has(avEntry.status)?'🌙 ':''}${AV_LABELS[avEntry.status]||avEntry.status}</div>${avEntry.requested_status?`<div style="font-size:.75rem;color:var(--muted);padding:0 12px 6px">Originally requested: <b style="color:${AV_COLORS[avEntry.requested_status]||'inherit'}">${AV_LATE.has(avEntry.requested_status)?'🌙 ':''}${AV_LABELS[avEntry.requested_status]||avEntry.requested_status}</b></div>`:''}${(avEntry.status==='FIXED_OFF'||avEntry.status==='FLEX_OFF')&&avEntry.notes&&avEntry.notes!=='guard_flex'?`<div style="font-size:.75rem;color:var(--muted);padding:0 12px 8px">Note: ${avEntry.notes}</div>`:''}`)
       :`<div class="pop-header" style="padding-top:0;color:var(--muted)">No availability set — can still assign</div>`;
 
     // Build LS8-available guard list for this date (for late shift template suggestions)
@@ -2535,9 +2621,16 @@ function cellClick(guardId,dateStr,event){
           </label>
         </div>
       </div>`;
+    const _isOff=avEntry&&(avEntry.status==='FIXED_OFF'||avEntry.status==='FLEX_OFF');
+    const offActions=_isOff?`
+      <div style="padding:4px 12px 8px;display:flex;gap:6px;flex-wrap:wrap">
+        ${avEntry.requested_status?`<button class="btn btn-outline btn-sm" onclick="doRestoreRequest('${gid}','${dateStr}')" title="Restore the guard's original request">↩ Restore ${AV_LATE.has(avEntry.requested_status)?'🌙 ':''}${AV_SHORT[avEntry.requested_status]||avEntry.requested_status}</button>`:''}
+        <button class="btn btn-outline btn-sm" onclick="doRemoveDayOff('${gid}','${dateStr}')">✕ Remove Day Off</button>
+      </div>`:'';
     pop.innerHTML=`
       <div class="pop-header">${guard?guard.name:gid} — ${fd(dateStr)}</div>
       ${avNote}
+      ${offActions}
       <div class="pop-divider"></div>
       <div class="pop-assign">
         <div id="ap-post-wrap"><label>Post</label>
@@ -2674,23 +2767,67 @@ function doAssignDayOff(guardId,dateStr){
   const gid=String(guardId);
   const avArr=D.avail;
   const existing=avArr.find(a=>String(a.guard_id)===gid&&a.date===dateStr);
-  const prevStatus=existing?.status,prevStart=existing?.custom_start,prevEnd=existing?.custom_end,prevNotes=existing?.notes;
+  const prevStatus=existing?.status,prevStart=existing?.custom_start,prevEnd=existing?.custom_end,prevNotes=existing?.notes,prevReq=existing?.requested_status;
   const flexNote=prevStatus==='FLEX_OFF'?'guard_flex':'';
-  if(existing){existing.status='FIXED_OFF';existing.custom_start='';existing.custom_end='';existing.notes=flexNote;}
-  else avArr.push({guard_id:guardId,date:dateStr,status:'FIXED_OFF',custom_start:'',custom_end:'',ot_willing:false,notes:''});
+  const isOff=s=>s==='FIXED_OFF'||s==='FLEX_OFF';
+  if(existing){existing.requested_status=!isOff(prevStatus)&&prevStatus?prevStatus:(prevReq||'');existing.status='FIXED_OFF';existing.custom_start='';existing.custom_end='';existing.notes=flexNote;}
+  else avArr.push({guard_id:guardId,date:dateStr,status:'FIXED_OFF',requested_status:'',custom_start:'',custom_end:'',ot_willing:false,notes:''});
   closeAllPops();closeBSheet();
   if(PANEL==='schedule') renderSchedGrid();
   else if(PANEL==='full-schedule-admin') R['full-schedule-admin']();
   toast('Day off marked for guard.','ok');
   arun('clientSubmitAvailability',r=>{
     if(!r||!r.success){
-      if(existing){existing.status=prevStatus;existing.custom_start=prevStart;existing.custom_end=prevEnd;existing.notes=prevNotes;}
+      if(existing){existing.status=prevStatus;existing.requested_status=prevReq;existing.custom_start=prevStart;existing.custom_end=prevEnd;existing.notes=prevNotes;}
       else{const i=avArr.findIndex(a=>String(a.guard_id)===gid&&a.date===dateStr);if(i>=0)avArr.splice(i,1);}
       if(PANEL==='schedule') renderSchedGrid();
       else if(PANEL==='full-schedule-admin') R['full-schedule-admin']();
       toast(r?.message||'Failed to mark day off.','err');
     }
   },null,[{guard_id:guardId,date:dateStr,status:'FIXED_OFF',custom_start:'',custom_end:'',ot_willing:false,notes:''}]);
+}
+
+// Remove a marked day off (and any availability) for this guard+date — cell returns to blank.
+function doRemoveDayOff(guardId,dateStr){
+  const gid=String(guardId);
+  const avArr=D.avail;
+  const removed=avArr.filter(a=>String(a.guard_id)===gid&&a.date===dateStr);
+  if(!removed.length){closeAllPops();closeBSheet();return;}
+  for(let i=avArr.length-1;i>=0;i--){if(String(avArr[i].guard_id)===gid&&avArr[i].date===dateStr)avArr.splice(i,1);}
+  closeAllPops();closeBSheet();
+  if(PANEL==='schedule') renderSchedGrid();
+  else if(PANEL==='full-schedule-admin') R['full-schedule-admin']();
+  toast('Day off removed.','ok');
+  arun('clientDeleteAvailability',r=>{
+    if(!r||!r.success){
+      removed.forEach(a=>avArr.push(a));
+      if(PANEL==='schedule') renderSchedGrid();
+      else if(PANEL==='full-schedule-admin') R['full-schedule-admin']();
+      toast(r?.message||'Failed to remove day off.','err');
+    }
+  },null,gid,dateStr);
+}
+
+// Restore the guard's original request that was overridden by a day off.
+function doRestoreRequest(guardId,dateStr){
+  const gid=String(guardId);
+  const existing=D.avail.find(a=>String(a.guard_id)===gid&&a.date===dateStr);
+  const req=existing&&existing.requested_status;
+  if(!req){doRemoveDayOff(guardId,dateStr);return;}
+  const prev={status:existing.status,requested_status:existing.requested_status,notes:existing.notes};
+  existing.status=req;existing.requested_status='';existing.notes='';
+  closeAllPops();closeBSheet();
+  if(PANEL==='schedule') renderSchedGrid();
+  else if(PANEL==='full-schedule-admin') R['full-schedule-admin']();
+  toast('Request restored.','ok');
+  arun('clientSubmitAvailability',r=>{
+    if(!r||!r.success){
+      existing.status=prev.status;existing.requested_status=prev.requested_status;existing.notes=prev.notes;
+      if(PANEL==='schedule') renderSchedGrid();
+      else if(PANEL==='full-schedule-admin') R['full-schedule-admin']();
+      toast(r?.message||'Failed to restore request.','err');
+    }
+  },null,[{guard_id:gid,date:dateStr,status:req,custom_start:existing.custom_start||'',custom_end:existing.custom_end||'',ot_willing:existing.ot_willing||false,notes:''}]);
 }
 
 function doAssignShift(guardId,dateStr){
@@ -3307,10 +3444,10 @@ R['my-avail']=function(){
   const rows=dates.map(d=>{
     const ds=ymd(d), hol=holiday(ds), we=isWE(ds), isT=ds===today, isSat=d.getDay()===6;
     const avEntry=viewAvail.find(a=>String(a.guard_id)===gid&&a.date===ds);
-    const avEntryLso=viewAvail.find(a=>String(a.guard_id)===gid&&a.date===ds&&a.status==='S_LSO');
-    // If guard has both 8HR and LSO entries, display as combined
+    const avEntryLso=viewAvail.find(a=>String(a.guard_id)===gid&&a.date===ds&&a.status==='S_LS');
+    // If guard has both 8HR and LS entries, display as combined
     const rawSt=avEntry?avEntry.status:null;
-    const st=(rawSt==='S_8HR'&&avEntryLso)?'S_8HR_LSO':rawSt;
+    const st=(rawSt==='S_8HR'&&avEntryLso)?'S_8HR_LS':rawSt;
     const shifts=D.shifts.filter(s=>s.date===ds&&s.status!=='cancelled');
     const myShift=shifts.find(s=>String(s.assigned_guard_id)===gid);
     const rowBg=isT?'#e0f2fe':hol?'#fffbeb':we?'#eef2f7':'#fff'; // weekends slightly darker
@@ -3334,7 +3471,7 @@ R['my-avail']=function(){
         const t=D.templates.find(x=>x.code===code);
         const total=shifts.filter(s=>s.template_code===code).length;
         const open=shifts.filter(s=>s.template_code===code&&!s.assigned_guard_id&&s.status!=='cancelled').length;
-        const isLateT=['LS8','LSO','LS10'].includes(code);
+        const isLateT=['LS8','LS','LS10'].includes(code);
         const hasOpen=open>0;
         return`<div style="display:flex;align-items:center;gap:6px;margin-bottom:3px">
           <span style="font-size:.72rem;font-weight:700;color:${hasOpen?'var(--navy)':'var(--muted)'};opacity:${hasOpen?1:.45}">
@@ -3354,9 +3491,9 @@ R['my-avail']=function(){
       // Determine if this option has matching shifts
       let hasMatch=true;
       if(k==='S_8HR'||k==='S_8HR_OT') hasMatch=shifts.some(s=>s.template_code==='8HR');
-      else if(k==='S_8HR_LSO') hasMatch=shifts.some(s=>s.template_code==='8HR')&&shifts.some(s=>s.template_code==='LSO');
+      else if(k==='S_8HR_LS') hasMatch=shifts.some(s=>s.template_code==='8HR')&&shifts.some(s=>s.template_code==='LS');
       else if(k==='S_LS8') hasMatch=shifts.some(s=>s.template_code==='LS8');
-      else if(k==='S_LSO') hasMatch=shifts.some(s=>s.template_code==='LSO');
+      else if(k==='S_LS') hasMatch=shifts.some(s=>s.template_code==='LS');
       else if(k==='S_SPEC') hasMatch=shifts.some(s=>s.template_code==='SPEC');
       // Off/flex/special always available
       const isOff=['FLEX_OFF','FIXED_OFF'].includes(k);
@@ -3544,13 +3681,13 @@ function setMyAvail(ds,status){
     chip.innerHTML=`● ${AV_LABELS[status]}`;
   }
 
-  // Track change — S_8HR_LSO saves two rows
+  // Track change — S_8HR_LS saves two rows
   const existing=getAvailView().find(a=>String(a.guard_id)===String(myId())&&a.date===ds);
-  if(status==='S_8HR_LSO'){
+  if(status==='S_8HR_LS'){
     availChanges[ds]={guard_id:myId(),date:ds,status:'S_8HR',custom_start:'',custom_end:'',ot_willing:false,notes:''};
-    availChanges[ds+'_lso']={guard_id:myId(),date:ds,status:'S_LSO',custom_start:'',custom_end:'',ot_willing:false,notes:''};
+    availChanges[ds+'_lso']={guard_id:myId(),date:ds,status:'S_LS',custom_start:'',custom_end:'',ot_willing:false,notes:''};
   } else {
-    // Remove any LSO companion row if switching away
+    // Remove any LS companion row if switching away
     delete availChanges[ds+'_lso'];
     const isOff=status==='FIXED_OFF'||status==='FLEX_OFF';
     const existingNote=existing?.notes&&existing.notes!=='guard_flex'?existing.notes:'';
@@ -3749,7 +3886,7 @@ R['my-schedule']=function(){
   const vp=getSchedPeriod();
   const dates=dateRange(vp.start_date,vp.schedule_thru);
   const today=ymd(new Date());
-  const mine=getSchedShifts().filter(s=>String(s.assigned_guard_id)===gid&&s.status!=='cancelled');
+  const mine=getSchedShifts().filter(s=>String(s.assigned_guard_id)===gid&&s.status!=='cancelled').sort(shiftSort);
 
   // Two header rows: dates + availability row label
   let th=`<tr>
@@ -3763,20 +3900,16 @@ R['my-schedule']=function(){
   });
   th+=`</tr>`;
 
-  // Availability row header
+  // Days-off row header — assigned days off only (requests live on the availability page)
   th+=`<tr>`;
   dates.forEach(d=>{
     const ds=ymd(d),isSat=d.getDay()===6;
     const avEntry=getSchedAvail().find(a=>String(a.guard_id)===gid&&a.date===ds);
-    const avEntryLso=getSchedAvail().find(a=>String(a.guard_id)===gid&&a.date===ds&&a.status==='S_LSO');
-    // If guard has both 8HR and LSO entries, display as combined
-    const rawSt=avEntry?avEntry.status:null;
-    const st=(rawSt==='S_8HR'&&avEntryLso)?'S_8HR_LSO':rawSt;
+    const st=(avEntry&&avEntry.status==='FIXED_OFF')?'FIXED_OFF':null;
     const satStyle=isSat?'border-left:3px solid #57a0d3;':'';
     const color=st?AV_COLORS[st]:'#e5e7eb';
-    const isLate=st&&AV_LATE.has(st);
     th+=`<td style="background:#0d2137;border:1px solid #1e3a5f;padding:2px;text-align:center;${satStyle}">
-      <span style="font-size:.62rem;color:${color};font-weight:700">${st?AV_SHORT[st]:'—'}${isLate?' 🌙':''}</span>
+      <span style="font-size:.62rem;color:${color};font-weight:700">${st?AV_SHORT[st]:'—'}</span>
     </td>`;
   });
   th+=`</tr>`;
@@ -3786,18 +3919,19 @@ R['my-schedule']=function(){
     const ds=ymd(d),hol=holiday(ds),we=isWE(ds),isT=ds===today,isSat=d.getDay()===6;
     const satBorder=isSat?'border-left:3px solid var(--ocean);':'';
     const colCls=isT?'col-today':hol?'col-holiday':we?'col-weekend':'';
-    const shift=mine.find(s=>s.date===ds);
-    if(shift){
-      const t=D.templates.find(x=>x.code===shift.template_code);
-      const p=D.posts.find(x=>x.id===shift.post_id);
-      const pc=postColor(shift.post_id);
-      return`<td class="cell-assigned ${colCls}" style="${satBorder}padding:4px;">
-        <div style="background:${pc}22;border-left:3px solid ${pc};border-radius:4px;padding:3px 5px;font-size:.72rem;font-weight:700">
+    const dayShifts=mine.filter(s=>s.date===ds);
+    if(dayShifts.length){
+      const inner=dayShifts.map(shift=>{
+        const t=D.templates.find(x=>x.code===shift.template_code);
+        const p=D.posts.find(x=>x.id===shift.post_id);
+        const pc=postColor(shift.post_id);
+        return`<div style="background:${pc}22;border-left:3px solid ${pc};border-radius:4px;padding:3px 5px;font-size:.72rem;font-weight:700">
           <div style="color:${pc}">${t?t.name:shift.template_code}</div>
           <div style="font-size:.65rem;color:var(--muted)">${p?p.name:''}</div>
           <div style="font-size:.62rem;color:var(--muted)">${shiftTimeLabel(shift,t).replace(' – ','–')}</div>
-        </div>
-      </td>`;
+        </div>`;
+      }).join('<div style="height:3px"></div>');
+      return`<td class="cell-assigned ${colCls}" style="${satBorder}padding:4px;">${inner}</td>`;
     }
     return`<td class="${colCls}" style="${satBorder}"><div class="cell-noshift">—</div></td>`;
   }).join('');
@@ -3806,7 +3940,7 @@ R['my-schedule']=function(){
     <div style="margin-bottom:10px">${schedPeriodSel('my-schedule')}</div>
     <div class="card" style="padding:8px;margin-bottom:14px">
       <div style="font-size:.79rem;color:var(--muted);margin-bottom:8px">
-        ${fd(vp.start_date)} – ${fd(vp.schedule_thru)} · <strong>${mine.length}</strong> shift${mine.length!==1?'s':''} assigned · Availability shown below date headers
+        ${fd(vp.start_date)} – ${fd(vp.schedule_thru)} · <strong>${mine.length}</strong> shift${mine.length!==1?'s':''} assigned · Days off shown below date headers
       </div>
       ${mine.length ? `<div class="sched-container" style="height:auto;max-height:200px">
         <div class="sg-wrap">
@@ -4256,7 +4390,7 @@ function doDeleteShifts(idsStr){
 function showBulkCreateModal(){
   if(!D.activePeriod){toast('No active period.','err');return;}
   const postOpts=D.posts.map(p=>`<option value="${p.id}">${p.name}</option>`).join('');
-  const tmplOpts=D.templates.filter(t=>['8HR','LS8','LSO','SPEC','MISC'].includes(t.code))
+  const tmplOpts=D.templates.filter(t=>['8HR','LS8','LS','SPEC','MISC'].includes(t.code))
     .map(t=>`<option value="${t.code}">${t.name} (${fmtTime(t.start_time)}–${fmtTime(t.end_time)})</option>`).join('');
   showModal(`<div class="modal-title">⚡ Bulk Create Shifts</div>
     <p class="muted" style="margin-bottom:14px;font-size:.82rem">Create multiple identical shift slots across a date range.</p>
@@ -4754,7 +4888,7 @@ function doSendInvite(guardId, guardName) {
 function doDeletePost(id){if(!confirm('Mark post inactive?'))return;arun('clientUpdatePost',r=>{if(r&&r.success){toast('Post removed.','warn');run('clientGetPosts',d=>{D.posts=d||[];R.posts();});}},null,{id,active:'FALSE'});}
 function doPublish(pid){if(!pid){toast('No active period.','err');return;}if(!confirm('Publish schedule and email all guards?'))return;aarun('clientPublishSchedule',r=>{if(r&&r.success)toast('Published!','ok');},null,pid);}
 function doLockPeriod(id){if(!confirm('Lock this pay period?'))return;arun('clientLockPeriod',()=>{toast('Period locked.','ok');run('clientGetPeriods',d=>{D.periods=d||[];R.periods();});},null,id);}
-function viewPeriod(id){D.activePeriod=D.periods.find(p=>p.id===id);run('clientGetShifts',r=>{D.shifts=r||[];go('schedule');},null,id);}
+function viewPeriod(id){D.activePeriod=D.periods.find(p=>p.id===id);run('clientGetShifts',r=>{D.shifts=r||[];go('full-schedule-admin');},null,id);}
 function doSetConfig(key){const v=document.getElementById(`cfg-${key}`)?.value;arun('clientSetConfig',r=>{if(r?.success)toast(`Saved: ${key}`,'ok');},null,key,v);}
 
 // ══════════════════════════════════════════
@@ -4897,7 +5031,7 @@ function renderMobGuardDash() {
   const upcoming = mine.filter(s => s.date >= today);
   const _mobAllOffSeen=new Set();
   const _mobAllOff=[...(D.avail||[]),...(D.availNext||[])].filter(a=>{
-    if(!(String(a.guard_id)===gid&&a.date>=today&&(a.status==='FIXED_OFF'||a.status==='FLEX_OFF')))return false;
+    if(!(String(a.guard_id)===gid&&a.date>=today&&a.status==='FIXED_OFF'))return false;
     if(_mobAllOffSeen.has(a.date))return false;
     _mobAllOffSeen.add(a.date);return true;
   });
@@ -4950,7 +5084,7 @@ function renderMobMySchedule() {
   const vp = getSchedPeriod();
 
   const dates = dateRange(vp.start_date, vp.schedule_thru);
-  const mine = getSchedShifts().filter(s => String(s.assigned_guard_id)===gid && s.status!=='cancelled');
+  const mine = getSchedShifts().filter(s => String(s.assigned_guard_id)===gid && s.status!=='cancelled').sort(shiftSort);
   const today = ymd(new Date());
 
   el.innerHTML = `
@@ -4960,15 +5094,35 @@ function renderMobMySchedule() {
     </div>
     ${dates.map(d => {
       const ds = ymd(d), hol = holiday(ds), we = isWE(ds), isT = ds===today;
-      const shift = mine.find(s => s.date===ds);
+      const dayShifts = mine.filter(s => s.date===ds);
       const avEntry = getSchedAvail().find(a => String(a.guard_id)===gid && a.date===ds);
-      const avSt = avEntry ? avEntry.status : null;
-      if (!shift && !avSt) return ''; // skip days with nothing
+      const avSt = (avEntry && avEntry.status==='FIXED_OFF') ? avEntry.status : null; // assigned days off only — requests live on the availability page
+      if (!dayShifts.length && !avSt) return ''; // skip days with nothing
 
-      const t = shift ? D.templates.find(x => x.code===shift.template_code) : null;
-      const p = shift ? D.posts.find(x => x.id===shift.post_id) : null;
-      const pc = shift ? postColor(shift.post_id) : 'var(--border)';
+      const hasShift = dayShifts.length>0;
       const borderColor = isT ? 'var(--wave)' : hol ? '#f59e0b' : we ? '#6366f1' : 'var(--border)';
+
+      const infoHtml = hasShift
+        ? dayShifts.map(shift=>{
+            const t = D.templates.find(x => x.code===shift.template_code);
+            const p = D.posts.find(x => x.id===shift.post_id);
+            const pc = postColor(shift.post_id);
+            return `<div style="font-weight:700;color:${pc}">${t?t.name:shift.template_code}${p?' · '+p.name:''}</div>
+                    <div style="font-size:.8rem;color:var(--muted)${dayShifts.length>1?';margin-bottom:4px':''}">${shiftTimeLabel(shift,t)}</div>`;
+          }).join('')
+        : `<div style="color:var(--muted);font-size:.85rem">No shift assigned</div>`;
+
+      const detailHtml = dayShifts.map(shift=>{
+        const t = D.templates.find(x => x.code===shift.template_code);
+        const p = D.posts.find(x => x.id===shift.post_id);
+        return `<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;padding-top:10px;font-size:.83rem">
+            <div><span class="muted">Post</span><div style="font-weight:600">${p?p.name:'—'}</div></div>
+            <div><span class="muted">Template</span><div style="font-weight:600">${t?t.name:shift.template_code}</div></div>
+            <div><span class="muted">Time In</span><div style="font-weight:600">${t?fmtTime(t.start_time):'—'}</div></div>
+            <div><span class="muted">Time Out</span><div style="font-weight:600">${t?fmtTime(t.end_time):'—'}</div></div>
+            ${t ? `<div><span class="muted">Paid Hours</span><div style="font-weight:600">${t.paid_hours}h</div></div>` : ''}
+          </div>`;
+      }).join('<div style="border-top:1px solid var(--border);margin-top:10px"></div>');
 
       return `<div class="g-shift-card" style="border:1.5px solid ${borderColor}">
         <div class="g-shift-header" onclick="mobExpandShift(this)">
@@ -4978,23 +5132,12 @@ function renderMobMySchedule() {
             <div class="g-shift-mo">${MONTHS[d.getMonth()]}</div>
           </div>
           <div class="g-shift-info">
-            ${shift
-              ? `<div style="font-weight:700;color:${pc}">${t?t.name:shift.template_code}${p?' · '+p.name:''}</div>
-                 <div style="font-size:.8rem;color:var(--muted)">${shiftTimeLabel(shift,t)}</div>`
-              : `<div style="color:var(--muted);font-size:.85rem">No shift assigned</div>`}
+            ${infoHtml}
             ${avSt ? `<div style="margin-top:3px"><span style="background:${AV_COLORS[avSt]}22;color:${AV_COLORS[avSt]};padding:2px 8px;border-radius:10px;font-size:.72rem;font-weight:700">${AV_LATE.has(avSt)?'🌙 ':''}${AV_LABELS[avSt]}</span></div>` : ''}
           </div>
           <div class="g-shift-expand">▼</div>
         </div>
-        ${shift ? `<div class="g-shift-detail" id="gsd-${ds}">
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;padding-top:10px;font-size:.83rem">
-            <div><span class="muted">Post</span><div style="font-weight:600">${p?p.name:'—'}</div></div>
-            <div><span class="muted">Template</span><div style="font-weight:600">${t?t.name:shift.template_code}</div></div>
-            <div><span class="muted">Time In</span><div style="font-weight:600">${t?fmtTime(t.start_time):'—'}</div></div>
-            <div><span class="muted">Time Out</span><div style="font-weight:600">${t?fmtTime(t.end_time):'—'}</div></div>
-            ${t ? `<div><span class="muted">Paid Hours</span><div style="font-weight:600">${t.paid_hours}h</div></div>` : ''}
-          </div>
-        </div>` : ''}
+        ${hasShift ? `<div class="g-shift-detail" id="gsd-${ds}">${detailHtml}</div>` : ''}
       </div>`;
     }).filter(Boolean).join('')}`;
 }
@@ -5087,7 +5230,7 @@ function openAvailSheet(ds, currentStatus) {
     let hasMatch=true;
     if(k==='S_8HR'||k==='S_8HR_OT') hasMatch=dayShifts.some(s=>s.template_code==='8HR');
     else if(k==='S_LS8') hasMatch=dayShifts.some(s=>s.template_code==='LS8');
-    else if(k==='S_LSO') hasMatch=dayShifts.some(s=>s.template_code==='LSO');
+    else if(k==='S_LS') hasMatch=dayShifts.some(s=>s.template_code==='LS');
     else if(k==='S_SPEC') hasMatch=dayShifts.some(s=>s.template_code==='SPEC');
     const isOff=['FLEX_OFF','FIXED_OFF'].includes(k);
     const disabled=!isOff&&!hasMatch;
@@ -5206,10 +5349,10 @@ function setMobAvail(ds, status) {
     return;
   }
 
-  // LS10 = both LS8 and LSO
+  // LS10 = both LS8 and LS
   const entries = status === 'S_LS10'
     ? [{guard_id:gid,date:ds,status:'S_LS8',custom_start:'',custom_end:'',ot_willing:false,notes:''},
-       {guard_id:gid,date:ds+'_lso',status:'S_LSO',custom_start:'',custom_end:'',ot_willing:false,notes:''}]
+       {guard_id:gid,date:ds+'_lso',status:'S_LS',custom_start:'',custom_end:'',ot_willing:false,notes:''}]
     : [{guard_id:gid,date:ds,status,custom_start:'',custom_end:'',ot_willing:false,notes:''}];
 
   mobAvailChanges[ds] = entries;
@@ -6529,7 +6672,17 @@ R['time-records'] = function() {
   const el = document.getElementById('content');
   if (!D.activePeriod) { el.innerHTML='<div class="card"><p class="muted">No active pay period.</p></div>'; return; }
 
-  const pOpts = D.periods.map(p=>`<option value="${p.id}"${D.activePeriod&&p.id===D.activePeriod.id?' selected':''}>${fd(p.start_date)} – ${fd(p.schedule_thru)}</option>`).join('');
+  // Default to the period currently being reconciled for payroll: the most
+  // recent period that has already ended (schedule_thru before today) and
+  // isn't locked yet. Falls back to the in-progress active period once that
+  // just-ended period has been closed/locked.
+  const _trToday = ymd(new Date());
+  const focusPeriod = D.periods
+    .filter(p => p.locked !== 'true' && ymd(p.schedule_thru) < _trToday)
+    .sort((a,b) => ymd(a.schedule_thru) < ymd(b.schedule_thru) ? 1 : -1)[0]
+    || D.activePeriod;
+
+  const pOpts = D.periods.map(p=>`<option value="${p.id}"${p.id===focusPeriod.id?' selected':''}>${fd(p.start_date)} – ${fd(p.schedule_thru)}</option>`).join('');
 
   document.getElementById('topbar-actions').innerHTML=`
     <button class="btn btn-outline btn-sm" onclick="exportTimeCSV()">📥 Export CSV</button>
@@ -6541,13 +6694,13 @@ R['time-records'] = function() {
       <div class="flex gap2 wrap items-c">
         <select class="sel" style="width:auto" onchange="loadAdminTimeRecords(this.value)">${pOpts}</select>
         <input type="text" id="tr-search" class="inp" style="width:180px" placeholder="Search guard…" oninput="filterTimeRecords()">
-        <span id="tr-payroll-due" class="muted" style="font-size:.82rem">Payroll due: <strong>${fd(D.activePeriod.time_report_due)||'—'}</strong></span>
+        <span id="tr-payroll-due" class="muted" style="font-size:.82rem">Payroll due: <strong>${fd(focusPeriod.time_report_due)||'—'}</strong></span>
         <span class="muted" style="font-size:.78rem" id="tr-back" style="display:none"></span>
       </div>
     </div>
     <div id="admin-time-table"><div class="muted" style="padding:20px">Loading…</div></div>`;
 
-  loadAdminTimeRecords(D.activePeriod.id);
+  loadAdminTimeRecords(focusPeriod.id);
 };
 
 let _allTimeRecords = [];
@@ -7052,8 +7205,8 @@ function exportTimeCSV() {
 function exportPayrollUpdateCSV(btn) {
   const pid = _trPeriodId || D.activePeriod?.id;
   const p = D.periods.find(x => x.id === pid);
-  if (!p || !p.payroll_due) {
-    toast('No payroll due date set for this period.','err'); return;
+  if (!p || !(p.time_report_due || p.payroll_due)) {
+    toast('No "Payroll due" date set for this period.','err'); return;
   }
   const origLabel = btn ? btn.innerHTML : '';
   if (btn) { btn.disabled = true; btn.innerHTML = '<span class="spinner"></span> Generating…'; }
@@ -7141,15 +7294,53 @@ function renderBadgeGrid() {
   const order = [...BADGES].sort((a,b) => (b.earned?1:0)-(a.earned?1:0));
   el.innerHTML = order.map(b => {
     const p = b.progress;
-    const sub = b.earned
-      ? `<div class="badge-sub">${b.earned_at ? 'Earned '+fd(b.earned_at.slice(0,10)) : 'Earned'}</div>`
-      : (p ? `<div class="badge-sub">${p.current} / ${p.target}</div>` : `<div class="badge-sub">${b.desc}</div>`);
-    return `<div class="badge${b.earned?'':' locked'}" title="${b.desc}">
+    let sub;
+    if (b.tally != null) {
+      sub = `<div class="badge-sub">${b.tally} ${b.tallyLabel||''}</div>`;
+    } else if (b.earned) {
+      sub = `<div class="badge-sub">${b.earned_at ? 'Earned '+fd(b.earned_at.slice(0,10)) : 'Earned'}</div>`;
+    } else if (p) {
+      sub = `<div class="badge-sub">${p.current} / ${p.target}</div>`;
+    } else {
+      sub = `<div class="badge-sub">${b.desc}</div>`;
+    }
+    return `<div class="badge${b.earned?'':' locked'}" onclick="showBadgeInfo('${b.key}')" title="${b.desc}">
       <div class="badge-emoji">${b.emoji}</div>
       <div class="badge-name">${b.name}</div>
       ${sub}
     </div>`;
   }).join('');
+}
+
+function showBadgeInfo(key) {
+  const b = BADGES.find(x => x.key === key); if (!b) return;
+  const p = b.progress;
+  let status;
+  if (b.tally != null) {
+    status = `<div style="margin-top:16px;font-size:2rem;font-weight:800;color:var(--navy);line-height:1">${b.tally}</div>
+      <div style="font-size:.8rem;color:var(--muted);margin-top:2px">${b.tallyLabel||''}</div>`;
+  } else if (b.earned) {
+    status = `<div style="margin-top:14px;font-weight:700;color:var(--green)">✅ Earned${b.earned_at ? ' on '+fd(b.earned_at.slice(0,10)) : ''}</div>`;
+  } else if (p && p.target) {
+    const pct = Math.min(100, Math.round((p.current / p.target) * 100));
+    status = `<div style="margin-top:16px">
+      <div style="display:flex;justify-content:space-between;font-size:.78rem;color:var(--muted);margin-bottom:5px">
+        <span>Your progress</span><span style="font-weight:700;color:var(--navy)">${p.current} / ${p.target}</span>
+      </div>
+      <div class="badge-bar"><div class="badge-bar-fill" style="width:${pct}%"></div></div>
+    </div>`;
+  } else {
+    status = `<div style="margin-top:14px;font-weight:700;color:var(--muted)">🔒 Not yet earned</div>`;
+  }
+  showModal(`<div style="text-align:center">
+    <div style="font-size:3.2rem;line-height:1;margin-bottom:8px${b.earned?'':';filter:grayscale(1);opacity:.5'}">${b.emoji}</div>
+    <div class="modal-title" style="margin-bottom:6px">${b.name}</div>
+    <div style="font-size:.88rem;color:var(--muted);line-height:1.45">${b.desc}</div>
+    ${status}
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-navy" onclick="closeModal()">Close</button>
+    </div>`);
 }
 
 // ── Stats alert banner (shown on guard dashboard) ─────────────
@@ -7194,7 +7385,7 @@ function dismissStats(timeRecordId) {
 }
 
 // ── Stats form ────────────────────────────────────────────────
-function openStatsForm(timeRecordId) {
+function openStatsForm(timeRecordId, targetDate) {
   // If the record is already in PENDING_STATS, open immediately (no async needed)
   const pending = timeRecordId ? PENDING_STATS.find(r => r.id === timeRecordId) : null;
   if (pending) { showStatsModal(pending); return; }
@@ -7207,13 +7398,36 @@ function openStatsForm(timeRecordId) {
 
   runG('clientGetMyTimeRecords', records => {
     let rec = timeRecordId ? (records||[]).find(r => r.id === timeRecordId) : null;
-    // When opened without a specific ID, auto-link to today's completed time record
+    // When opened without a specific ID, auto-link to the time record for the
+    // target day (defaults to today). Prefer a completed record, else any.
     if (!rec && !timeRecordId) {
-      const todayStr = ymd(new Date());
-      rec = (records||[]).find(r => ymd(new Date(r.date+'T12:00:00')) === todayStr && r.status === 'complete');
+      const wantStr = targetDate || ymd(new Date());
+      const onDate = (records||[]).filter(r => ymd(new Date(r.date+'T12:00:00')) === wantStr);
+      rec = onDate.find(r => r.status === 'complete') || onDate[0];
     }
-    showStatsModal(rec || { id: timeRecordId||'', date: ymd(new Date()), guard_name: S?.guard?.name });
+    showStatsModal(rec || { id: timeRecordId||'', date: targetDate || ymd(new Date()), guard_name: S?.guard?.name });
   }, e => { closeModal(); toast('Could not load. Try again.','err'); }, D.activePeriod?.id);
+}
+
+function openMissedStatsDate() {
+  const today = ymd(new Date());
+  const minDate = D.activePeriod?.start_date || '';
+  showModal(`<div class="modal-title">📅 Submit a Missed Stat Card</div>
+    <div style="font-size:.85rem;color:var(--muted);margin-bottom:12px">Pick the day you forgot to submit stats for.</div>
+    <div class="fg"><label>Date</label>
+      <input type="date" id="missed-stats-date" class="inp" value="${today}" max="${today}"${minDate?` min="${minDate}"`:''}>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-outline" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-navy" onclick="confirmMissedStatsDate()">Continue</button>
+    </div>`);
+}
+
+function confirmMissedStatsDate() {
+  const v = document.getElementById('missed-stats-date')?.value;
+  if (!v) { toast('Please pick a date.','err'); return; }
+  if (v > ymd(new Date())) { toast('Pick a date in the past.','err'); return; }
+  openStatsForm('', v);
 }
 
 function showStatsModal(rec) {
@@ -7440,45 +7654,73 @@ R['stats'] = function() {
         <div class="card-title" style="margin:0">My Stats</div>
         <select class="sel" style="width:auto;font-size:.78rem" onchange="loadMyStats(this.value)">${pOpts}</select>
       </div>
+      <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn btn-navy btn-sm" onclick="openStatsForm('')">+ Submit Stats for Today</button>
+        <button class="btn btn-outline btn-sm" onclick="openMissedStatsDate()">+ Submit for a Previous Day</button>
+      </div>
     </div>
     ${PENDING_STATS.length ? `<div style="margin-bottom:12px">${renderStatsAlerts()}</div>` : ''}
-    <div id="my-stats-list"><div class="muted" style="padding:20px">Loading…</div></div>
-    <div style="margin-top:12px">
-      <button class="btn btn-navy btn-sm" onclick="openStatsForm('')">+ Submit Stats for Today</button>
-    </div>
-    <div class="card" style="margin-top:14px;padding:14px">
+    <div class="card" style="margin-bottom:12px;padding:14px">
       <div class="card-title">🏅 Achievements</div>
       <div id="badge-grid"><div class="muted" style="padding:8px">Loading…</div></div>
-    </div>`;
+    </div>
+    <div class="card-title" style="margin:14px 4px 8px">📋 Previous Stat Cards</div>
+    <div id="my-stats-list"><div class="muted" style="padding:20px">Loading…</div></div>`;
 
   if (D.activePeriod) loadMyStats(D.activePeriod.id);
   if (BADGES.length) renderBadgeGrid(); else loadBadges();
 };
 
+const MY_STATS_PAGE = 20;
+let _myStatsSorted = [];
+let _myStatsShown = 0;
+
 function loadMyStats(periodId) {
   const el = document.getElementById('my-stats-list'); if (!el) return;
+  el.innerHTML = '<div class="muted" style="padding:20px">Loading…</div>';
   runG('clientGetMyShiftStats', stats => {
     if (!stats||!stats.length) {
+      _myStatsSorted = []; _myStatsShown = 0;
       el.innerHTML = '<div class="empty" style="padding:20px"><div class="ei">📋</div><p>No stats submitted this period.</p></div>';
       return;
     }
-    const sorted = [...stats].sort((a,b)=>a.date>b.date?-1:1);
-    el.innerHTML = sorted.map(s => {
-      const d = new Date(s.date+'T12:00:00');
-      const total = [s.preventive_actions,s.bather_assists,s.rfd_rescues,s.rfd_line_rescues,
-        s.seabob_rescues,s.first_aid].reduce((sum,v)=>sum+(parseInt(v)||0),0);
-      return `<div class="card" style="margin-bottom:8px;padding:12px 14px">
-        <div class="flex between items-c">
-          <div>
-            <div style="font-weight:700">${DAYS[d.getDay()]} ${MONTHS[d.getMonth()]} ${d.getDate()}</div>
-            <div style="font-size:.78rem;color:var(--muted)">${s.beach_location||'No location'} · ${total} actions/incidents</div>
-          </div>
-          <button class="btn btn-outline btn-xs" onclick="openStatsForm('${s.time_record_id}')">Edit</button>
-        </div>
-        ${s.training?`<div style="font-size:.72rem;color:var(--muted);margin-top:4px">Training: ${s.training}</div>`:''}
-      </div>`;
-    }).join('');
+    _myStatsSorted = [...stats].sort((a,b)=>a.date>b.date?-1:1);
+    _myStatsShown = 0;
+    renderMyStatsList(true);
   }, null, periodId);
+}
+
+function myStatsCardRow(s) {
+  const d = new Date(s.date+'T12:00:00');
+  const total = [s.preventive_actions,s.bather_assists,s.rfd_rescues,s.rfd_line_rescues,
+    s.seabob_rescues,s.first_aid].reduce((sum,v)=>sum+(parseInt(v)||0),0);
+  return `<div class="card" style="margin-bottom:8px;padding:12px 14px">
+    <div class="flex between items-c">
+      <div>
+        <div style="font-weight:700">${DAYS[d.getDay()]} ${MONTHS[d.getMonth()]} ${d.getDate()}</div>
+        <div style="font-size:.78rem;color:var(--muted)">${s.beach_location||'No location'} · ${total} actions/incidents</div>
+      </div>
+      <button class="btn btn-outline btn-xs" onclick="openStatsForm('${s.time_record_id}')">Edit</button>
+    </div>
+    ${s.training?`<div style="font-size:.72rem;color:var(--muted);margin-top:4px">Training: ${s.training}</div>`:''}
+  </div>`;
+}
+
+function renderMyStatsList(reset) {
+  const el = document.getElementById('my-stats-list'); if (!el) return;
+  if (reset) { el.innerHTML = ''; _myStatsShown = 0; }
+  const moreBtn = document.getElementById('my-stats-more'); if (moreBtn) moreBtn.remove();
+  const next = _myStatsSorted.slice(_myStatsShown, _myStatsShown + MY_STATS_PAGE);
+  el.insertAdjacentHTML('beforeend', next.map(myStatsCardRow).join(''));
+  _myStatsShown += next.length;
+  const remaining = _myStatsSorted.length - _myStatsShown;
+  if (remaining > 0) {
+    const n = Math.min(MY_STATS_PAGE, remaining);
+    el.insertAdjacentHTML('beforeend',
+      `<div id="my-stats-more" style="text-align:center;margin-top:4px">
+        <button class="btn btn-outline btn-sm" onclick="renderMyStatsList(false)">Load previous ${n} (${remaining} more)</button>
+      </div>`);
+  }
 }
 
 // ── Admin: Stats Dashboard ────────────────────────────────────
@@ -7528,15 +7770,30 @@ R['stats-admin'] = function() {
   loadBadgeLeaderboard();
 };
 
+let _badgeMeta = {}; // key → {name, emoji, desc} for badges shown in the leaderboard
+function showBadgeMeta(key) {
+  const b = _badgeMeta[key]; if (!b) return;
+  showModal(`<div style="text-align:center">
+    <div style="font-size:3.2rem;line-height:1;margin-bottom:8px">${b.emoji}</div>
+    <div class="modal-title" style="margin-bottom:6px">${b.name}</div>
+    <div style="font-size:.88rem;color:var(--muted);line-height:1.45">${b.desc||''}</div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-navy" onclick="closeModal()">Close</button>
+    </div>`);
+}
+
 function loadBadgeLeaderboard() {
   arun('clientGetBadgeLeaderboard', rows => {
     const el = document.getElementById('badge-leaderboard'); if (!el) return;
     const earners = (rows || []).filter(r => r.count > 0);
     if (!earners.length) { el.innerHTML = '<div class="muted" style="padding:8px">No badges earned yet.</div>'; return; }
+    _badgeMeta = {};
+    earners.forEach(r => r.badges.forEach(b => { _badgeMeta[b.key] = b; }));
     el.innerHTML = earners.map(r => `<div class="flex between items-c" style="padding:7px 4px;border-bottom:1px solid var(--border)">
         <div style="font-weight:600;font-size:.86rem">${r.name}</div>
         <div style="display:flex;align-items:center;gap:8px">
-          <span style="font-size:1rem;letter-spacing:1px">${r.badges.map(b=>`<span title="${b.name}">${b.emoji}</span>`).join('')}</span>
+          <span style="font-size:1rem;letter-spacing:1px">${r.badges.map(b=>`<span onclick="showBadgeMeta('${b.key}')" title="${b.name}" style="cursor:pointer">${b.emoji}</span>`).join('')}</span>
           <span class="muted" style="font-size:.78rem">${r.count}</span>
         </div>
       </div>`).join('');
@@ -7631,9 +7888,16 @@ function renderAdminStatsPage() {
     ? missingLastShiftFiltered.map(r => {
         const coStr = r.clock_out ? new Date(r.clock_out).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}) : '';
         const rowId = `mlsr-${r.time_record_id}`;
+        const nudgeId = `nudge-ls-${r.guard_id}`;
+        const sentForDate = localStorage.getItem(`nudge_${r.guard_id}`) === r.date;
         return `<div id="${rowId}" style="display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid var(--border)">
           <span style="font-weight:600;font-size:.85rem;flex:1">${r.guard_name}</span>
           <span style="color:var(--muted);font-size:.78rem">${fd(r.date)}${coStr ? ' · out ' + coStr : ''}</span>
+          <button id="${nudgeId}" class="btn btn-outline btn-xs"
+            onclick="sendNudge('${r.guard_id}','${r.date}','${nudgeId}')"
+            ${sentForDate ? 'disabled' : ''}
+            style="${sentForDate ? 'color:var(--wave);opacity:1' : ''}"
+          >${sentForDate ? 'Sent ✓' : 'Nudge'}</button>
           <button class="btn btn-outline btn-xs" style="color:var(--muted);padding:2px 6px" onclick="dismissLastShift('${r.time_record_id}','${rowId}')" title="Dismiss">✕</button>
         </div>`;
       }).join('')

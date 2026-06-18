@@ -872,14 +872,33 @@ function submitAvailability(token, entries) {
         return { success: false, message: 'Availability deadline has passed.' };
     }
     const ex = existing.find(x => x.guard_id === e.guard_id && toYMD(x.date) === toYMD(e.date));
+    const isOff = s => s === 'FIXED_OFF' || s === 'FLEX_OFF';
     if (ex) {
-      updateById(SHEETS.AVAILABILITY, { id: ex.id, status: e.status,
+      // Preserve the guard's original request when an admin "day off" overrides it,
+      // so we can still show what was denied. Cleared when a real request is set.
+      let requested_status = '';
+      if (isOff(e.status)) requested_status = !isOff(ex.status) && ex.status ? ex.status : (ex.requested_status || '');
+      updateById(SHEETS.AVAILABILITY, { id: ex.id, status: e.status, requested_status,
         custom_start: e.custom_start||'', custom_end: e.custom_end||'', ot_willing: e.ot_willing||false, notes: e.notes||'' });
     } else {
-      appendRow(SHEETS.AVAILABILITY, { id: uid('AV'), guard_id: e.guard_id, date: e.date, status: e.status,
+      appendRow(SHEETS.AVAILABILITY, { id: uid('AV'), guard_id: e.guard_id, date: e.date, status: e.status, requested_status: '',
         custom_start: e.custom_start||'', custom_end: e.custom_end||'', ot_willing: e.ot_willing||false, notes: e.notes||'',
         submitted_at: new Date().toISOString() });
     }
+  }
+  return { success: true };
+}
+
+// Admin: remove a guard's availability entry for a date (e.g. clear a marked day off).
+function deleteAvailability(guardId, dateStr) {
+  const sheet = SH(SHEETS.AVAILABILITY);
+  if (!sheet) return { success: false, message: 'Sheet not found.' };
+  const data = sheet.getDataRange().getValues();
+  const headers = data[0].map(h => String(h).trim());
+  const gIdx = headers.indexOf('guard_id'), dIdx = headers.indexOf('date');
+  for (let i = data.length - 1; i >= 1; i--) {
+    if (String(data[i][gIdx]) === String(guardId) && toYMD(data[i][dIdx]) === toYMD(dateStr))
+      sheet.deleteRow(i + 1);
   }
   return { success: true };
 }
@@ -1105,7 +1124,7 @@ function setupSpreadsheet() {
     Posts:         ['id','name','rank_eligibility','active','color','sort_order'],
     ShiftTemplates:['code','name','start_time','end_time','paid_hours','break_minutes'],
     Shifts:        ['id','pay_period_id','date','post_id','template_code','type','assigned_guard_id','status','notes','created_at','series_id','custom_start','custom_end'],
-    Availability:  ['id','guard_id','date','status','custom_start','custom_end','ot_willing','notes','submitted_at'],
+    Availability:  ['id','guard_id','date','status','requested_status','custom_start','custom_end','ot_willing','notes','submitted_at'],
     ShiftRequests: ['id','guard_id','shift_id','requested_at','status','admin_notes'],
     SwapRequests:  ['id','requestor_id','target_id','shift_id','status','admin_notes','target_response','created_at'],
     PayPeriods:    ['id','start_date','end_date','schedule_thru','locked','payroll_due','availability_deadline','time_report_due'],
@@ -1141,7 +1160,7 @@ function setupSpreadsheet() {
     tmpl.getRange(2,1,7,6).setValues([
       ['8HR', 'Regular 8hr',    '8:45 AM',  '5:15 PM', 8,  30],
       ['LS8', 'Late Shift 8hr', '10:45 AM','7:15 PM', 8,  30],
-      ['LSO', 'Late Shift Only','5:15 PM', '7:15 PM', 2,  0 ],
+      ['LS',  'Late Shift',     '5:15 PM', '7:15 PM', 2,  0 ],
       ['LS10','Late Shift 10hr','8:45 AM', '7:15 PM', 10, 30],
       ['SPEC', 'Special',    'TBD',     'TBD',     0,   0 ],
       ['TOURN','Tournament', '6:00 PM', '8:30 PM', 2.5, 0 ],
@@ -1190,9 +1209,14 @@ function submitShiftStats(token, d) {
   if (!session) return { success: false, message: 'Not authenticated.' };
   const guardId = String(session.guard.id);
 
-  // Check if stats already exist for this time_record_id
+  // Check if stats already exist. When a time record is linked, match on it.
+  // For backdated submissions with no time record, dedupe on the date instead,
+  // so re-submitting a missed day updates the card rather than duplicating it.
   const existing = sheetToObjects(SHEETS.SHIFT_STATS).find(s =>
-    s.time_record_id === d.time_record_id && String(s.guard_id) === guardId
+    String(s.guard_id) === guardId && (
+      (d.time_record_id && s.time_record_id === d.time_record_id) ||
+      (!d.time_record_id && !s.time_record_id && s.date === d.date)
+    )
   );
   if (existing) {
     // Update existing record
@@ -1310,7 +1334,7 @@ function exportShiftStatsCSV(token, periodId) {
   ])];
 
   const csv = rows.map(r => r.map(c => `"${String(c).replace(/"/g,'""')}"`).join(',')).join('\n');
-  return { success: true, csv, period: period ? `${period.start_date}_${period.end_date}` : 'all' };
+  return { success: true, csv, period: period ? `${toYMD(period.start_date)}_${toYMD(period.end_date)||toYMD(period.schedule_thru)}` : 'all' };
 }
 
 function getAdminStatsData(token, date) {
@@ -1489,22 +1513,112 @@ const BADGE_DEFS = [
     desc:'50 shifts in a row with stats submitted',
     earned: c => c.statsStreak >= 50,
     progress: c => ({ current: Math.min(c.statsStreak, 50), target: 50 }) },
+  { key:'lifeguard_knowledge_10', name:'Beach Scholar', emoji:'🎓', category:'Skills',
+    desc:'Logged Lifeguard Knowledge training on 10 stat cards',
+    earned: c => c.knowledgeCards >= 10,
+    progress: c => ({ current: Math.min(c.knowledgeCards, 10), target: 10 }) },
+  { key:'first_save', name:'First Save', emoji:'🆘', category:'Rescues',
+    desc:'Logged your first rescue',
+    earned: c => c.totalRescues >= 1,
+    progress: c => ({ current: Math.min(c.totalRescues, 1), target: 1 }) },
+  { key:'rescues_10', name:'Baywatch I', emoji:'🛟', category:'Rescues',
+    desc:'10 rescues logged (RFD, line & seabob combined)',
+    earned: c => c.totalRescues >= 10,
+    progress: c => ({ current: Math.min(c.totalRescues, 10), target: 10 }) },
+  { key:'rescues_25', name:'Baywatch II', emoji:'🛟', category:'Rescues',
+    desc:'25 rescues logged (RFD, line & seabob combined)',
+    earned: c => c.totalRescues >= 25,
+    progress: c => ({ current: Math.min(c.totalRescues, 25), target: 25 }) },
+  { key:'rescues_50', name:'Baywatch III', emoji:'🛟', category:'Rescues',
+    desc:'50 rescues logged (RFD, line & seabob combined)',
+    earned: c => c.totalRescues >= 50,
+    progress: c => ({ current: Math.min(c.totalRescues, 50), target: 50 }) },
+  { key:'seabob_7', name:'The Life Aquatic', emoji:'🤿', category:'Rescues',
+    desc:'7 seabob rescues',
+    earned: c => c.totalSeabob >= 7,
+    progress: c => ({ current: Math.min(c.totalSeabob, 7), target: 7 }) },
+  { key:'bather_50', name:'Helping Hand', emoji:'🤝', category:'Rescues',
+    desc:'50 bather assists',
+    earned: c => c.totalBatherAssists >= 50,
+    progress: c => ({ current: Math.min(c.totalBatherAssists, 50), target: 50 }) },
+  { key:'first_aid_25', name:'Band-Aid Brigade', emoji:'🩹', category:'Rescues',
+    desc:'25 first-aid actions',
+    earned: c => c.totalFirstAid >= 25,
+    progress: c => ({ current: Math.min(c.totalFirstAid, 25), target: 25 }) },
+  { key:'all_hands', name:'All Hands', emoji:'🌟', category:'Rescues',
+    desc:'3+ rescues in a single shift',
+    earned: c => c.maxRescuesInShift >= 3,
+    progress: c => ({ current: Math.min(c.maxRescuesInShift, 3), target: 3 }) },
+  { key:'all_workouts', name:'Cross-Trainer', emoji:'🤸', category:'Skills',
+    desc:'Logged every workout type at least once',
+    earned: c => c.allWorkoutsDone,
+    progress: c => ({ current: c.workoutsSeen, target: c.workoutsTotal }) },
+  { key:'storm_shift', name:'Storm Chaser', emoji:'⛈️', category:'Weather',
+    desc:'Worked a shift in thunder & lightning',
+    earned: c => c.stormCards >= 1,
+    progress: c => ({ current: Math.min(c.stormCards, 1), target: 1 }) },
+  { key:'all_weather', name:'Rain or Shine', emoji:'🌦️', category:'Weather',
+    desc:'Worked in every kind of weather',
+    earned: c => c.allWeatherDone,
+    progress: c => ({ current: c.weatherSeenCount, target: c.weatherTypesTotal }) },
   { key:'late_shift_10hr', name:'Closing Time', emoji:'🌙', category:'Endurance',
     desc:'Worked a 10-hour late shift without an auto clock-out',
     earned: c => c.tenHourNoAuto >= 1,
     progress: c => ({ current: Math.min(c.tenHourNoAuto, 1), target: 1 }) },
+  { key:'sleepyhead', name:'Sleepyhead', emoji:'😴', category:'Hall of Shame',
+    desc:'Auto-clocked-out 3 times — remember to clock out!',
+    earned: c => c.autoClockOuts >= 3,
+    progress: c => ({ current: Math.min(c.autoClockOuts, 3), target: 3 }) },
+  { key:'late_shifts_period_5', name:'Night Owl', emoji:'🦉', category:'Endurance',
+    desc:'Worked 5 late shifts in one pay period',
+    earned: c => c.maxLateShiftsPeriod >= 5,
+    progress: c => ({ current: Math.min(c.maxLateShiftsPeriod, 5), target: 5 }) },
+  { key:'twelve_hour_shift', name:'The Long Haul', emoji:'🕛', category:'Endurance',
+    desc:'Worked a single 12-hour shift',
+    earned: c => c.maxShiftMinutes >= 720,
+    progress: c => ({ current: Math.min(Math.floor(c.maxShiftMinutes / 60), 12), target: 12 }) },
   { key:'iron_week', name:'Iron Week', emoji:'💪', category:'Endurance',
     desc:'5 ten-hour shifts in a single work week',
     earned: c => c.maxTenHourWeek >= 5,
     progress: c => ({ current: Math.min(c.maxTenHourWeek, 5), target: 5 }) },
+  { key:'hours_100', name:'Centurion', emoji:'🎖️', category:'Endurance',
+    desc:'100 lifetime hours on the stand',
+    earned: c => c.totalHours >= 100,
+    progress: c => ({ current: Math.min(Math.floor(c.totalHours), 100), target: 100 }) },
+  { key:'tourn_3', name:'Competitor', emoji:'🏆', category:'Endurance',
+    desc:'Worked 3 tournament shifts',
+    earned: c => c.tournShifts >= 3,
+    progress: c => ({ current: Math.min(c.tournShifts, 3), target: 3 }) },
+  { key:'holiday_hero', name:'Holiday Hero', emoji:'🎆', category:'Endurance',
+    desc:'Worked a summer holiday (Memorial Day, July 4 or Labor Day)',
+    earned: c => c.workedHoliday,
+    progress: c => ({ current: c.workedHoliday ? 1 : 0, target: 1 }) },
+  { key:'holiday_titan', name:'Holiday Titan', emoji:'🎇', category:'Endurance',
+    desc:'Worked all three major holidays (Memorial Day, July 4 & Labor Day) in one summer',
+    earned: c => c.maxHolidaysInSummer >= 3,
+    progress: c => ({ current: Math.min(c.maxHolidaysInSummer, 3), target: 3 }) },
+  { key:'seven_in_a_row', name:'Lucky Seven', emoji:'🍀', category:'Endurance',
+    desc:'Worked 7 days in a row',
+    earned: c => c.maxConsecutiveDays >= 7,
+    progress: c => ({ current: Math.min(c.maxConsecutiveDays, 7), target: 7 }) },
+  { key:'eight_in_a_row', name:'Eight Days a Week', emoji:'🎸', category:'Endurance',
+    desc:'Worked 8 days in a row',
+    earned: c => c.maxConsecutiveDays >= 8,
+    progress: c => ({ current: Math.min(c.maxConsecutiveDays, 8), target: 8 }) },
+  { key:'nine_in_a_row', name:'Cloud Nine', emoji:'☁️', category:'Endurance',
+    desc:'Worked 9 days in a row',
+    earned: c => c.maxConsecutiveDays >= 9,
+    progress: c => ({ current: Math.min(c.maxConsecutiveDays, 9), target: 9 }) },
   { key:'ten_in_a_row', name:'Unbroken', emoji:'🔥', category:'Endurance',
     desc:'Worked 10 days in a row',
     earned: c => c.maxConsecutiveDays >= 10,
     progress: c => ({ current: Math.min(c.maxConsecutiveDays, 10), target: 10 }) }
 ];
 
-// Build the per-guard context once, then evaluate every def against it.
-function buildBadgeCtx_(guardId) {
+// Load all sheet data a guard's badges depend on, once. Pure metric math then
+// runs against this snapshot (no further sheet reads), which lets us replay it
+// at any historical cutoff to find when each badge was actually earned.
+function loadBadgeData_(guardId) {
   const gid = String(guardId);
   const completed = sheetToObjects(SHEETS.TIME_RECORDS)
     .filter(r => String(r.guard_id) === gid && r.status === 'complete')
@@ -1512,21 +1626,65 @@ function buildBadgeCtx_(guardId) {
       const d = toYMD(a.date).localeCompare(toYMD(b.date));
       return d !== 0 ? d : String(a.clock_in).localeCompare(String(b.clock_in));
     });
-
-  const statsTRIds = new Set(
-    sheetToObjects(SHEETS.SHIFT_STATS)
-      .filter(s => String(s.guard_id) === gid)
-      .map(s => s.time_record_id)
-  );
-
-  // Map shift_id → 10-hour? (template LS10 or paid_hours >= 10)
+  const myStats = sheetToObjects(SHEETS.SHIFT_STATS).filter(s => String(s.guard_id) === gid);
   const shiftsById = {};
   sheetToObjects(SHEETS.SHIFTS).forEach(s => { shiftsById[s.id] = s; });
+  const tmplByCode = {};
+  getAllTemplates().forEach(t => { tmplByCode[t.code] = t; });
+  return { completed, myStats, shiftsById, tmplByCode };
+}
+
+// Build the per-guard context. `cutoff` (YYYY-MM-DD, optional) limits the data
+// to records on or before that date, so the same code can be replayed through
+// history to find badge-earned dates.
+function buildBadgeCtx_(guardId) {
+  return computeBadgeMetrics_(loadBadgeData_(guardId), null);
+}
+
+function computeBadgeMetrics_(data, cutoff) {
+  const completed = cutoff
+    ? data.completed.filter(r => toYMD(r.date) <= cutoff)
+    : data.completed;
+  const myStats = cutoff
+    ? data.myStats.filter(s => toYMD(s.date) <= cutoff)
+    : data.myStats;
+  const shiftsById = data.shiftsById;
+  const statsTRIds = new Set(myStats.map(s => s.time_record_id));
+
+  // Aggregates pulled from submitted stat cards (rescues, training, weather).
+  const WORKOUT_ITEMS = ['Run', 'Calisthenics / Body Weight', 'Swim', 'Row',
+    'Paddle', 'Kayak', 'Surf Ski', 'Resistance / Weight'];
+  const WEATHER_TYPES = ['Sunny', 'Cloudy', 'Showers', 'Thunder/Lightning', 'Foggy'];
+  const workoutSeen = new Set(), weatherSeen = new Set();
+  let totalRescues = 0, totalSeabob = 0, totalBatherAssists = 0, totalFirstAid = 0;
+  let maxRescuesInShift = 0, knowledgeCards = 0, stormCards = 0;
+  myStats.forEach(s => {
+    const cardRescues = (parseInt(s.rfd_rescues) || 0)
+      + (parseInt(s.rfd_line_rescues) || 0) + (parseInt(s.seabob_rescues) || 0);
+    totalRescues += cardRescues;
+    if (cardRescues > maxRescuesInShift) maxRescuesInShift = cardRescues;
+    totalSeabob += (parseInt(s.seabob_rescues) || 0);
+    totalBatherAssists += (parseInt(s.bather_assists) || 0);
+    totalFirstAid += (parseInt(s.first_aid) || 0);
+    const items = String(s.training || '').split(',').map(x => x.trim());
+    if (items.indexOf('Lifeguard Knowledge') >= 0) knowledgeCards++;
+    items.forEach(it => { if (WORKOUT_ITEMS.indexOf(it) >= 0) workoutSeen.add(it); });
+    const wx = String(s.weather || '').trim();
+    if (wx) weatherSeen.add(wx);
+    if (wx === 'Thunder/Lightning') stormCards++;
+  });
+  const workoutsSeen = workoutSeen.size, workoutsTotal = WORKOUT_ITEMS.length;
+  const allWorkoutsDone = workoutsSeen === workoutsTotal;
+  const weatherSeenCount = WEATHER_TYPES.filter(w => weatherSeen.has(w)).length;
+  const weatherTypesTotal = WEATHER_TYPES.length;
+  const allWeatherDone = weatherSeenCount === weatherTypesTotal;
+
+  // Map shift_id → 10-hour? (template LS10 or paid_hours >= 10)
   const isTenHour = (rec) => {
     const shift = rec.shift_id ? shiftsById[rec.shift_id] : null;
     if (shift) {
       if (shift.template_code === 'LS10') return true;
-      const tmpl = templateByCode(shift.template_code);
+      const tmpl = data.tmplByCode[shift.template_code];
       if (tmpl && parseFloat(tmpl.paid_hours) >= 10) return true;
     }
     // Fallback: actual logged time ≥ ~10h (paid minutes, breaks already removed)
@@ -1551,6 +1709,31 @@ function buildBadgeCtx_(guardId) {
   const tenHourNoAuto = completed.filter(r =>
     isTenHour(r) && String(r.auto_clocked_out) !== 'true').length;
 
+  // Longest single real (non auto-clocked-out) shift, in minutes.
+  const maxShiftMinutes = completed
+    .filter(r => String(r.auto_clocked_out) !== 'true')
+    .reduce((m, r) => Math.max(m, parseInt(r.total_minutes) || 0), 0);
+
+  // Most late shifts worked in any single pay period. A shift is "late" by its
+  // template code (LSO kept for pre-rename data). Grouped by the shift's
+  // pay_period_id; records with no linked shift can't be classified, so skip.
+  const LATE_CODES = new Set(['LS8', 'LS', 'LSO', 'LS10']);
+  const lateByPeriod = {};
+  completed.forEach(r => {
+    const shift = r.shift_id ? shiftsById[r.shift_id] : null;
+    if (!shift || !LATE_CODES.has(shift.template_code) || !shift.pay_period_id) return;
+    lateByPeriod[shift.pay_period_id] = (lateByPeriod[shift.pay_period_id] || 0) + 1;
+  });
+  const maxLateShiftsPeriod = Object.values(lateByPeriod).reduce((m, v) => Math.max(m, v), 0);
+
+  // Lifetime hours, forgotten clock-outs, and tournament shifts.
+  const totalHours = completed.reduce((sum, r) => sum + (parseInt(r.total_minutes) || 0), 0) / 60;
+  const autoClockOuts = completed.filter(r => String(r.auto_clocked_out) === 'true').length;
+  const tournShifts = completed.filter(r => {
+    const shift = r.shift_id ? shiftsById[r.shift_id] : null;
+    return shift && shift.template_code === 'TOURN';
+  }).length;
+
   // Most 10-hour shifts in any single Sat–Fri work week.
   const tenHourByWeek = {};
   completed.forEach(r => {
@@ -1569,7 +1752,61 @@ function buildBadgeCtx_(guardId) {
     prev = day;
   });
 
-  return { statsStreak, tenHourNoAuto, maxTenHourWeek, maxConsecutiveDays };
+  // Worked summer holidays (Memorial Day, July 4, Labor Day), grouped by year
+  // so "all three" must happen within a single summer.
+  const holidaysByYear = {};
+  workedDays.forEach(day => {
+    const t = holidayType_(day);
+    if (!t) return;
+    const yr = day.slice(0, 4);
+    (holidaysByYear[yr] = holidaysByYear[yr] || new Set()).add(t);
+  });
+  const workedHoliday = Object.keys(holidaysByYear).length > 0;
+  const maxHolidaysInSummer = Object.values(holidaysByYear)
+    .reduce((m, set) => Math.max(m, set.size), 0);
+
+  return { statsStreak, tenHourNoAuto, maxShiftMinutes, maxLateShiftsPeriod,
+    maxTenHourWeek, maxConsecutiveDays,
+    totalRescues, knowledgeCards, stormCards, workoutsSeen, workoutsTotal, allWorkoutsDone,
+    totalSeabob, totalBatherAssists, totalFirstAid, maxRescuesInShift,
+    weatherSeenCount, weatherTypesTotal, allWeatherDone,
+    totalHours, autoClockOuts, tournShifts, workedHoliday, maxHolidaysInSummer };
+}
+
+// Replay each earned badge's predicate through the guard's activity dates and
+// return { key: 'YYYY-MM-DD' } for the earliest date it became true — i.e. when
+// the badge was actually earned, derived from logged data rather than wall clock.
+function computeEarnedDates_(data, earnedKeys) {
+  const result = {};
+  if (!earnedKeys.length) return result;
+  const defByKey = {};
+  BADGE_DEFS.forEach(d => { defByKey[d.key] = d; });
+  const remaining = new Set(earnedKeys);
+  const dates = [...new Set([
+    ...data.completed.map(r => toYMD(r.date)),
+    ...data.myStats.map(s => toYMD(s.date))
+  ])].filter(Boolean).sort();
+  for (const d of dates) {
+    if (!remaining.size) break;
+    const m = computeBadgeMetrics_(data, d);
+    for (const key of [...remaining]) {
+      if (defByKey[key].earned(m)) { result[key] = d; remaining.delete(key); }
+    }
+  }
+  return result;
+}
+
+// Classify a YYYY-MM-DD date as a major summer holiday, or '' if none:
+// July 4 (Independence Day), the last Monday of May (Memorial Day), or the
+// first Monday of September (Labor Day).
+function holidayType_(ymd) {
+  const [y, m, d] = String(ymd).split('-').map(Number);
+  if (!y || !m || !d) return '';
+  if (m === 7 && d === 4) return 'july4';               // Independence Day
+  const dow = new Date(y, m - 1, d, 12).getDay();       // 1 = Monday
+  if (m === 5 && dow === 1 && d >= 25) return 'memorial'; // Memorial Day (last Mon)
+  if (m === 9 && dow === 1 && d <= 7)  return 'labor';    // Labor Day (first Mon)
+  return '';
 }
 
 // True if dayB is the calendar day immediately after dayA (both YYYY-MM-DD).
@@ -1600,18 +1837,22 @@ function getBadgeState(token) {
   const guardId = String(session.guard.id);
   ensureBadgesSheet_();
 
-  const ctx = buildBadgeCtx_(guardId);
+  const data = loadBadgeData_(guardId);
+  const ctx = computeBadgeMetrics_(data, null);
   const owned = {};
   sheetToObjects(SHEETS.BADGES)
     .filter(b => String(b.guard_id) === guardId)
     .forEach(b => { owned[b.badge_key] = b.earned_at; });
 
+  // Data-derived earned dates for every currently-earned badge.
+  const earnedKeys = BADGE_DEFS.filter(d => d.earned(ctx)).map(d => d.key);
+  const earnedDates = computeEarnedDates_(data, earnedKeys);
+
   const newlyEarned = [];
   const badges = BADGE_DEFS.map(def => {
     const isEarned = !!def.earned(ctx);
-    let earnedAt = owned[def.key] || '';
+    const earnedAt = isEarned ? (earnedDates[def.key] || '') : '';
     if (isEarned && !owned.hasOwnProperty(def.key)) {
-      earnedAt = new Date().toISOString();
       appendRow(SHEETS.BADGES, {
         id: uid('BDG'), guard_id: guardId, badge_key: def.key,
         earned_at: earnedAt, meta: ''
@@ -1623,35 +1864,55 @@ function getBadgeState(token) {
       key: def.key, name: def.name, emoji: def.emoji,
       desc: def.desc, category: def.category,
       earned: isEarned, earned_at: earnedAt,
-      progress: def.progress ? def.progress(ctx) : null
+      progress: def.progress ? def.progress(ctx) : null,
+      tally: def.tally ? def.tally(ctx) : null,
+      tallyLabel: def.tallyLabel || ''
     };
   });
 
   return { badges, newlyEarned };
 }
 
-// Admin: badge counts per active guard, most badges first.
+// Admin: badge counts per guard, most badges first. Badges are evaluated from
+// live data (the same way a guard's own stats page does) rather than read from
+// the persisted Badges sheet — that sheet only gains a row when a guard opens
+// their own stats page, so reading it would under-report and leave this view
+// out of sync with what each guard actually sees.
 function getBadgeLeaderboard(token) {
   requireAdmin(token);
-  ensureBadgesSheet_();
-  const rows = sheetToObjects(SHEETS.BADGES);
-  const byGuard = {};
-  rows.forEach(b => {
-    const gid = String(b.guard_id);
-    (byGuard[gid] = byGuard[gid] || []).push(b.badge_key);
+
+  // Load the shared sheets once, then group the per-guard slices.
+  const completedByGuard = {};
+  sheetToObjects(SHEETS.TIME_RECORDS)
+    .filter(r => r.status === 'complete')
+    .forEach(r => {
+      const gid = String(r.guard_id);
+      (completedByGuard[gid] = completedByGuard[gid] || []).push(r);
+    });
+  const statsByGuard = {};
+  sheetToObjects(SHEETS.SHIFT_STATS).forEach(s => {
+    const gid = String(s.guard_id);
+    (statsByGuard[gid] = statsByGuard[gid] || []).push(s);
   });
-  const defByKey = {};
-  BADGE_DEFS.forEach(d => { defByKey[d.key] = d; });
+  const shiftsById = {};
+  sheetToObjects(SHEETS.SHIFTS).forEach(s => { shiftsById[s.id] = s; });
+  const tmplByCode = {};
+  getAllTemplates().forEach(t => { tmplByCode[t.code] = t; });
 
   return getAllGuards().map(g => {
-    const keys = byGuard[String(g.id)] || [];
+    const gid = String(g.id);
+    const completed = (completedByGuard[gid] || []).sort((a, b) => {
+      const d = toYMD(a.date).localeCompare(toYMD(b.date));
+      return d !== 0 ? d : String(a.clock_in).localeCompare(String(b.clock_in));
+    });
+    const data = { completed, myStats: statsByGuard[gid] || [], shiftsById, tmplByCode };
+    const ctx = computeBadgeMetrics_(data, null);
+    const earned = BADGE_DEFS.filter(d => d.earned(ctx));
     return {
       guard_id: g.id,
       name: g.name,
-      count: keys.length,
-      badges: keys.map(k => defByKey[k]
-        ? { key: k, name: defByKey[k].name, emoji: defByKey[k].emoji }
-        : { key: k, name: k, emoji: '🏅' })
+      count: earned.length,
+      badges: earned.map(d => ({ key: d.key, name: d.name, emoji: d.emoji, desc: d.desc }))
     };
   }).sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
 }
@@ -1688,7 +1949,8 @@ function clientMigrateAvailability() {
     'WORK':      'S_8HR',
     'OT_AVAIL':  'S_8HR_OT',
     'S_8HR_LS8': 'S_LS8',
-    'S_8HR_LSO': 'S_LSO',
+    'S_8HR_LSO': 'S_LS',
+    'S_LSO':     'S_LS',
     'SPECIAL':   'S_SPEC',
     'FLEX_OFF':  'FLEX_OFF',
     'FIXED_OFF': 'FIXED_OFF',
@@ -1710,13 +1972,26 @@ function clientMigrateAvailability() {
   }
   return { success: true, message: `Migrated ${count} rows.` };
 }
+function clientAddAvailRequestedCol() {
+  // Run once from the editor to add the 'requested_status' column to the Availability sheet.
+  // Stores the guard's original request when an admin day-off override replaces it.
+  const sheet = SH(SHEETS.AVAILABILITY);
+  const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0].map(h => String(h).trim());
+  if (headers.indexOf('requested_status') >= 0) return { success: true, message: 'Column already exists.' };
+  // Insert right after 'status' to match the schema order (fall back to the end)
+  const statusIdx = headers.indexOf('status');
+  const afterCol = statusIdx >= 0 ? statusIdx + 1 : sheet.getLastColumn();
+  sheet.insertColumnAfter(afterCol);
+  sheet.getRange(1, afterCol + 1).setValue('requested_status');
+  return { success: true, message: 'Added requested_status column.' };
+}
 function clientFixTemplateTimes() {
   // Run once to correct template times in the sheet
   requireAdmin();
   const correct = {
     '8HR': {name:'Regular 8hr',   start:'8:45 AM', end:'5:15 PM', hours:8,  brk:30},
     'LS8': {name:'Late Shift 8hr',start:'10:45 AM',end:'7:15 PM', hours:8,  brk:30},
-    'LSO': {name:'Late Shift Only',start:'5:15 PM', end:'7:15 PM', hours:2,  brk:0},
+    'LS':  {name:'Late Shift',     start:'5:15 PM', end:'7:15 PM', hours:2,  brk:0},
     'LS10':{name:'Late Shift 10hr',start:'8:45 AM', end:'7:15 PM', hours:10, brk:30},
   };
   const sheet = SH(SHEETS.TEMPLATES);
@@ -1736,6 +2011,29 @@ function clientFixTemplateTimes() {
     }
   }
   return {success:true, message:'Template times updated.'};
+}
+function clientRenameLsoToLs() {
+  // Run once from the editor to migrate the old "LSO" / "Late Shift Only" shift
+  // to the new "LS" / "Late Shift" naming across all stored data.
+  requireAdmin();
+  const rewriteCol = (sheetName, colName, map) => {
+    const sheet = SH(sheetName);
+    const data = sheet.getDataRange().getValues();
+    if (data.length < 2) return 0;
+    const headers = data[0];
+    const idx = headers.indexOf(colName);
+    if (idx < 0) return 0;
+    let n = 0;
+    for (let i = 1; i < data.length; i++) {
+      const old = String(data[i][idx]).trim();
+      if (map[old] && map[old] !== old) { sheet.getRange(i+1, idx+1).setValue(map[old]); n++; }
+    }
+    return n;
+  };
+  const tmpl   = rewriteCol(SHEETS.TEMPLATES,     'code',          {'LSO':'LS'});
+  const shifts = rewriteCol(SHEETS.SHIFTS,        'template_code', {'LSO':'LS'});
+  const avail  = rewriteCol(SHEETS.AVAILABILITY,  'status',        {'S_LSO':'S_LS','S_8HR_LSO':'S_LS'});
+  return {success:true, message:`Renamed LSO→LS: ${tmpl} template, ${shifts} shifts, ${avail} availability rows.`};
 }
 function clientGetPeriods()                { return getAllPeriods(); }
 function clientGetActivePeriod()           { return getActivePeriod(); }
@@ -1795,6 +2093,7 @@ function clientUpdatePeriod(token,d)       { requireAdmin(token); return updateP
 function clientLockPeriod(token,id)        { requireAdmin(token); return lockPeriod(id); }
 function clientPublishSchedule(token,id)   { requireAdmin(token); return publishSchedule(id); }
 function clientSubmitAvailability(token,e) { return submitAvailability(token, e); }
+function clientDeleteAvailability(token,guardId,dateStr) { requireAdmin(token); return deleteAvailability(guardId, dateStr); }
 function clientRequestShift(sid)          { return requestShift(sid); }
 function clientApproveRequest(rid)        { return approveRequest(rid); }
 function clientDenyRequest(rid,reason)    { return denyRequest(rid,reason); }
@@ -2304,7 +2603,7 @@ function exportTimeRecordsCSV(periodId) {
     });
 
   return { success: true, csv: rows.map(r => r.map(c => `"${String(c).replace(/"/g,'""')}"`).join(',')).join('\n'),
-           period: `${period.start_date}_${period.end_date}` };
+           period: `${toYMD(period.start_date)}_${toYMD(period.end_date)||toYMD(period.schedule_thru)}` };
 }
 
 // Client-facing functions
@@ -2470,12 +2769,19 @@ function exportPayrollUpdateCSV(periodId) {
   const period = periodById(periodId);
   if (!period) return { success: false, message: 'Period not found.' };
 
-  const payrollDue = toYMD(period.payroll_due);
-  if (!payrollDue) return { success: false, message: 'No payroll due date set for this period.' };
+  // Cutoff = the date the time report is submitted with estimates (shown as
+  // "Payroll due" on the Time Records page, which reads time_report_due).
+  // Days on/after this were estimated and need reconciling. Fall back to the
+  // legacy payroll_due field only if time_report_due is unset.
+  const payrollDue = toYMD(period.time_report_due) || toYMD(period.payroll_due);
+  if (!payrollDue) return { success: false, message: 'No "Payroll due" (time report due) date set for this period.' };
 
   // One read per sheet — avoid helper functions that each re-read sheets
   const periodStart = toYMD(period.start_date);
-  const periodEnd   = toYMD(period.schedule_thru) || toYMD(period.end_date);
+  // Bound to the pay period itself (end_date), not schedule_thru. Days scheduled
+  // past end_date to fill out the work week belong to the NEXT pay period and
+  // must not leak into this period's payroll update.
+  const periodEnd   = toYMD(period.end_date) || toYMD(period.schedule_thru);
 
   const guards    = sheetToObjects(SHEETS.GUARDS).filter(g => g.status !== 'inactive');
   const templates = sheetToObjects(SHEETS.TEMPLATES);
@@ -2586,7 +2892,7 @@ function exportPayrollUpdateCSV(periodId) {
   return {
     success: true,
     csv: rows.map(r => r.map(c => `"${String(c).replace(/"/g,'""')}"`).join(',')).join('\n'),
-    period: `${period.start_date}_${period.end_date}`,
+    period: `${periodStart}_${periodEnd}`,
     payroll_due: payrollDue,
     row_count: rows.length - 1
   };

@@ -43,7 +43,7 @@ Clipboard shortcut: `! cat apps-script/<file> | pbcopy`
 
 ## Admin panels (R[panel] pattern)
 - `dashboard` — admin home
-- `schedule` — guard×date grid with availability (renderSchedGrid)
+- `schedule` — RETIRED: removed from nav/entry points (Full Schedule is used for scheduling). `R['schedule']`/`renderSchedGrid` remain as dormant, unreachable code; the `if(PANEL==='schedule')` refresh hooks now fall through to `full-schedule-admin`
 - `full-schedule-admin` — by-post or by-guard full schedule; toggle via `FSA_VIEW`
 - `board` — preview + copy URL for the public Board display
 - `shifts`, `time-records`, `guards`, `posts`, `periods`, `locations`, `config`
