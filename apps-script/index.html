@@ -1090,6 +1090,15 @@ function shiftSort(a,b){
   if(sb==null) return -1;
   return sa-sb;
 }
+// Merge this guard's active- + next-period shifts, deduped by id (the two period
+// queries overlap on the schedule-through window) and sorted by date then start time.
+function myMergedShifts(gid){
+  const m=new Map();
+  [...D.shifts,...(D.shiftsNext||[])].forEach(s=>{
+    if(String(s.assigned_guard_id)===gid&&s.status!=='cancelled') m.set(s.id,s);
+  });
+  return [...m.values()].sort(shiftSort);
+}
 // Late shift = an LS-type template, or any shift ending at/after 7:15 PM.
 const LATE_TMPL=new Set(['LS8','LS','LS10']);
 function isLateShift(shift){
@@ -1114,7 +1123,7 @@ function _saveDismissedAvail(obj){try{localStorage.setItem(_DISMISSED_AVAIL_KEY,
 function dismissAvailReminder(periodId){const d=_loadDismissedAvail();d[periodId]=true;_saveDismissedAvail(d);const el=document.getElementById('content');if(el)renderGuardDash(el);}
 let IMPERSONATE_CLOCK_STATUS={clocked_in:false,record:null}; // impersonated guard's clock state
 let D={guards:[],posts:[],templates:[],periods:[],activePeriod:null,
-       shifts:[],avail:[],pendingReqs:[],pendingSwaps:[],weeklyHours:{},
+       shifts:[],shiftsNext:[],avail:[],pendingReqs:[],pendingSwaps:[],weeklyHours:{},
        mySwaps:[],config:[]};
 
 const isTrueAdmin=()=>S&&S.role==='admin';
@@ -1493,6 +1502,7 @@ function bgLoad(){
   if(!isTrueAdmin()) { loadClockStatus(); loadPendingStats(); loadBadges(); }
   if(!isTrueAdmin() && D.nextPeriod) {
     run('clientGetAvailability', r=>{ D.availNext=r||[]; }, null, D.nextPeriod.id);
+    run('clientGetShifts', r=>{ D.shiftsNext=r||[]; if(PANEL==='dashboard') go('dashboard'); }, null, D.nextPeriod.id);
   }
   run('clientGetConfig',cfgs=>{D.config=cfgs||[];applyRC(D.config);});
 }
@@ -1519,8 +1529,12 @@ function doImpersonate(){
   if(D.activePeriod){
     run('clientGetAvailability',r=>{
       D.avail=r||[];
-      if(D.nextPeriod){ run('clientGetAvailability',r2=>{D.availNext=r2||[];_go();},_go,D.nextPeriod.id); }
-      else _go();
+      if(D.nextPeriod){
+        // Load next period's availability AND shifts so impersonation matches the guard's phone view.
+        run('clientGetAvailability',r2=>{D.availNext=r2||[];_go();},_go,D.nextPeriod.id);
+        run('clientGetShifts',r3=>{D.shiftsNext=r3||[]; if(PANEL==='dashboard')_go();},null,D.nextPeriod.id);
+      }
+      else { D.shiftsNext=[]; _go(); }
     },_go,D.activePeriod.id);
   } else {
     _go();
@@ -1688,9 +1702,9 @@ function renderGuardDash(el){
   // Load clock status only for the real logged-in guard (not when impersonating)
   if(!GV&&!IMPERSONATE) loadClockStatus(()=>{ const w=document.getElementById('clock-widget'); if(w) renderClockWidget(w); });
   const gid=String(myId()), today=ymd(new Date());
-  const mine=D.shifts.filter(s=>String(s.assigned_guard_id)===gid&&s.status!=='cancelled');
+  const mine=myMergedShifts(gid);
   const todayShifts=mine.filter(s=>s.date===today);
-  const upcoming=mine.filter(s=>s.date>=today).sort(shiftSort);
+  const upcoming=mine.filter(s=>s.date>today); // today's shifts live in the Today section above
   const _upcomingDates=new Set(upcoming.map(s=>s.date));
   const _allAvailOffSeen=new Set();
   const _allAvailOff=[...(D.avail||[]),...(D.availNext||[])].filter(a=>{
@@ -1701,7 +1715,7 @@ function renderGuardDash(el){
   const _dashItems=[
     ...upcoming.map(s=>({_type:'shift',date:s.date,data:s})),
     ..._allAvailOff.map(a=>({_type:'off',date:a.date,data:a}))
-  ].sort((a,b)=>a.date>b.date?1:-1);
+  ].sort((a,b)=>a.date<b.date?-1:a.date>b.date?1:0); // stable: preserves intra-day shiftSort order
   const tasks=[];
   const _promptPeriod = D.nextPeriod || D.activePeriod;
   const _promptAvail = D.nextPeriod ? (D.availNext||[]) : D.avail;
@@ -5025,10 +5039,9 @@ function renderMobGuardDash() {
   const today = ymd(new Date());
   const el = document.getElementById('content');
 
-  const mine = D.shifts.filter(s => String(s.assigned_guard_id)===gid && s.status!=='cancelled')
-    .sort((a,b) => a.date > b.date ? 1 : -1);
+  const mine = myMergedShifts(gid);
   const todayShifts = mine.filter(s => s.date === today);
-  const upcoming = mine.filter(s => s.date >= today);
+  const upcoming = mine.filter(s => s.date > today); // today's shifts live in the Today section above
   const _mobAllOffSeen=new Set();
   const _mobAllOff=[...(D.avail||[]),...(D.availNext||[])].filter(a=>{
     if(!(String(a.guard_id)===gid&&a.date>=today&&a.status==='FIXED_OFF'))return false;
@@ -5038,7 +5051,7 @@ function renderMobGuardDash() {
   const _mobDashItems=[
     ...upcoming.map(s=>({_type:'shift',date:s.date,data:s})),
     ..._mobAllOff.map(a=>({_type:'off',date:a.date,data:a}))
-  ].sort((a,b)=>a.date>b.date?1:-1);
+  ].sort((a,b)=>a.date<b.date?-1:a.date>b.date?1:0); // stable: preserves intra-day shiftSort order
 
   // Action nudges
   const tasks = [];
