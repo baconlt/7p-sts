@@ -202,6 +202,7 @@ body{font-family:'Barlow',sans-serif;background:var(--foam);color:var(--text);mi
 .av-tint-FLEX_OFF {background:#fefce8;}
 .av-tint-FIXED_OFF{background:#fff1f2;}
 .av-tint-S_8HR_OT {background:#f0fdf4;}
+.av-tint-S_CADET  {background:#fdf2f8;}
 .av-tint-none     {background:#ffffff;}
 /* Weekend/holiday tint override */
 .col-weekend{background:#f1f5f9 !important;}
@@ -272,6 +273,7 @@ body{font-family:'Barlow',sans-serif;background:var(--foam);color:var(--text);mi
 .av-FLEX_OFF {background:#fef9c3;color:#713f12;}
 .av-FIXED_OFF{background:#fee2e2;color:#991b1b;}
 .av-S_8HR_OT {background:#d1fae5;color:#065f46;}
+.av-S_CADET  {background:#fce7f3;color:#9d174d;}
 .av-none     {background:#f3f4f6;color:#9ca3af;border:1px dashed var(--border);}
 
 /* shift-slot indicator on guard avail page */
@@ -881,6 +883,57 @@ function _tideRowsHtml(dateStr) {
     </div>`).join('');
 }
 
+function _esc(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
+
+// Read-only announcements feed shown on guard + admin dashboards (admin gets the
+// management card too). Returns '' when there are no announcements.
+function announcementsCardHtml() {
+  const list = D.announcements || [];
+  if (!list.length) return '';
+  return `<div class="card" style="margin-bottom:14px">
+    <div class="card-title">📣 Announcements</div>
+    ${list.map((a,i) => `<div style="padding:9px 0;${i?'border-top:1px solid var(--border)':''}">
+      <div style="font-size:.88rem;line-height:1.4">${_esc(a.message).replace(/\n/g,'<br>')}</div>
+      <div style="font-size:.7rem;color:var(--muted);margin-top:3px">${a.created_at?fd(a.created_at.slice(0,10)):''}${a.created_by?' · '+_esc(a.created_by):''}</div>
+    </div>`).join('')}
+  </div>`;
+}
+
+// Admin management card: post new announcements + delete existing ones.
+function adminAnnouncementsCardHtml() {
+  const list = D.announcements || [];
+  return `<div class="card">
+    <div class="card-title">📣 Announcements</div>
+    <div class="flex gap2" style="margin-bottom:10px;align-items:flex-start">
+      <textarea id="ann-input" rows="2" placeholder="Post an announcement for all guards…" style="flex:1;padding:8px 10px;border:1.5px solid var(--border);border-radius:10px;font-family:inherit;font-size:.86rem;resize:vertical"></textarea>
+      <button class="btn btn-wave btn-sm" onclick="doAddAnnouncement()">Post</button>
+    </div>
+    ${list.length ? list.map(a => `<div style="display:flex;gap:10px;align-items:flex-start;padding:9px 0;border-top:1px solid var(--border)">
+      <div style="flex:1">
+        <div style="font-size:.88rem;line-height:1.4">${_esc(a.message).replace(/\n/g,'<br>')}</div>
+        <div style="font-size:.7rem;color:var(--muted);margin-top:3px">${a.created_at?fd(a.created_at.slice(0,10)):''}${a.created_by?' · '+_esc(a.created_by):''}</div>
+      </div>
+      <button class="btn btn-outline btn-sm" style="color:var(--coral)" onclick="doDeleteAnnouncement('${a.id}')" title="Delete">✕</button>
+    </div>`).join('') : `<div class="muted" style="font-size:.82rem;padding:4px 0">No announcements yet.</div>`}
+  </div>`;
+}
+function doAddAnnouncement() {
+  const inp = document.getElementById('ann-input'); if (!inp) return;
+  const msg = inp.value.trim();
+  if (!msg) { toast('Type an announcement first.','warn'); return; }
+  arun('clientAddAnnouncement', r => {
+    if (r && r.success) {
+      run('clientGetAnnouncements', rr => { D.announcements = rr||[]; if(PANEL==='dashboard')R.dashboard(); toast('Announcement posted.','ok'); });
+    } else toast((r&&r.message)||'Could not post announcement.','err');
+  }, null, msg);
+}
+function doDeleteAnnouncement(id) {
+  if (!confirm('Delete this announcement?')) return;
+  arun('clientDeleteAnnouncement', () => {
+    run('clientGetAnnouncements', rr => { D.announcements = rr||[]; if(PANEL==='dashboard'){ if(isAdmin())R.dashboard(); else _rerenderGuardDash(); } toast('Announcement deleted.','ok'); });
+  }, null, id);
+}
+
 function tideCardHtml() {
   const today=ymd(new Date());
   const tomorrow=ymd(new Date(Date.now()+86400000));
@@ -928,6 +981,7 @@ const AV_COLORS = {
   S_LS:        '#0891b2',   // late shift (LS)
   S_8HR_LS:    '#0e7490',   // regular + late shift (saves two rows)
   S_SPEC:       '#ea580c',   // special/custom
+  S_CADET:      '#db2777',   // cadet shift
   FLEX_OFF:     '#ca8a04',   // preferred off, flexible
   FIXED_OFF:    '#dc2626',   // hard day off
   S_8HR_OT:     '#16a34a',   // regular + OT willing
@@ -938,6 +992,7 @@ const AV_LABELS = {
   S_LS:        'LS',
   S_8HR_LS:    '8HR + LS',
   S_SPEC:       'Special',
+  S_CADET:      'Cadet',
   FLEX_OFF:     'Flex Day Off',
   FIXED_OFF:    'Day Off',
   S_8HR_OT:     'OT Day',
@@ -948,6 +1003,7 @@ const AV_SHORT = {
   S_LS:        'LS',
   S_8HR_LS:    '8HR+LS',
   S_SPEC:       'Special',
+  S_CADET:      'Cadet',
   FLEX_OFF:     'Flex',
   FIXED_OFF:    'Off',
   S_8HR_OT:     'OT',
@@ -957,7 +1013,7 @@ const ASSIGN_TMPL_CODES = ['8HR','LS8','LS','SPEC','TOURN'];
 // Which statuses include late shift availability
 const AV_LATE = new Set(['S_LS8','S_LS','S_8HR_LS']);
 // Which statuses mean guard is available at all
-const AV_AVAIL = new Set(['S_8HR','S_LS8','S_LS','S_8HR_LS','S_SPEC','S_8HR_OT']);
+const AV_AVAIL = new Set(['S_8HR','S_LS8','S_LS','S_8HR_LS','S_SPEC','S_CADET','S_8HR_OT']);
 // Regular-shift statuses that count toward the 40-hour availability limit (S_SPEC excluded — custom hours TBD)
 const AV_REGULAR = new Set(['S_8HR','S_8HR_OT']);
 // Senior ranks required for late shifts
@@ -1120,11 +1176,14 @@ let SNOOZED_STATS={}; // {time_record_id: snooze_until_date} // current clock-in
 const _DISMISSED_AVAIL_KEY='sts_dismissed_avail';
 function _loadDismissedAvail(){try{return JSON.parse(localStorage.getItem(_DISMISSED_AVAIL_KEY)||'{}');}catch(e){return {};}}
 function _saveDismissedAvail(obj){try{localStorage.setItem(_DISMISSED_AVAIL_KEY,JSON.stringify(obj));}catch(e){}}
-function dismissAvailReminder(periodId){const d=_loadDismissedAvail();d[periodId]=true;_saveDismissedAvail(d);const el=document.getElementById('content');if(el)renderGuardDash(el);}
+// Re-render the guard dashboard using whichever renderer the current context uses
+// (mobile/impersonation → renderMobGuardDash; desktop real guard → renderGuardDash).
+function _rerenderGuardDash(){const el=document.getElementById('content');if(!el)return;if(!isAdmin()&&(IMPERSONATE||isMobile()))renderMobGuardDash();else renderGuardDash(el);}
+function dismissAvailReminder(periodId){const d=_loadDismissedAvail();d[periodId]=true;_saveDismissedAvail(d);_rerenderGuardDash();}
 let IMPERSONATE_CLOCK_STATUS={clocked_in:false,record:null}; // impersonated guard's clock state
 let D={guards:[],posts:[],templates:[],periods:[],activePeriod:null,
        shifts:[],shiftsNext:[],avail:[],pendingReqs:[],pendingSwaps:[],weeklyHours:{},
-       mySwaps:[],config:[]};
+       mySwaps:[],config:[],announcements:[]};
 
 const isTrueAdmin=()=>S&&S.role==='admin';
 const isAdmin=()=>!GV&&!IMPERSONATE&&isTrueAdmin();
@@ -1494,6 +1553,7 @@ function loadPeriodData(cb) {
   }
 }
 function bgLoad(){
+  run('clientGetAnnouncements',r=>{ D.announcements=r||[]; if(PANEL==='dashboard'){ if(isAdmin())R.dashboard(); else _rerenderGuardDash(); } });
   if(isTrueAdmin()){
     run('clientGetPendingRequests',r=>{D.pendingReqs=r||[];refreshBadges();});
     // swaps removed
@@ -1616,7 +1676,7 @@ function go(panel){
     if(panel==='dashboard')    { renderMobGuardDash(); return; }
     if(panel==='my-schedule')  { renderMobMySchedule(); return; }
     if(panel==='my-avail')     { renderMobMyAvail(); return; }
-    if(panel==='full-schedule'){ renderMobFullSchedule(); return; }
+    if(panel==='full-schedule'){ fsMobMode='day'; fsDayDate=_fsDefaultDay(); renderMobFullSchedule(); return; }
     if(panel==='profile')      { renderMobProfile(); return; }
   }
   if(R[panel])R[panel]();
@@ -1661,13 +1721,13 @@ R.dashboard=function(){
             <div><span class="muted">Payroll due:</span> <strong>${fd(D.activePeriod.payroll_due)||'—'}</strong></div>
           </div>
           <div class="flex gap2 wrap mt2">
-            <button class="btn btn-wave btn-sm" onclick="go('full-schedule-admin')">📅 Schedule</button>
-            <button class="btn btn-green btn-sm" onclick="doPublish('${D.activePeriod.id}')">📢 Publish</button>
+            <button class="btn btn-wave btn-sm" onclick="go('full-schedule-admin')">📅 Schedule & Publish</button>
             ${D.activePeriod.locked!=='true'?`<button class="btn btn-outline btn-sm" onclick="doLockPeriod('${D.activePeriod.id}')">🔒 Lock</button>`:`<span class="badge b-denied">🔒 Locked</span>`}
           </div>`:
           `<p class="muted">No active pay period. <a href="#" onclick="go('periods')">Create one →</a></p>`}
       </div>
       ${tideCardHtml()}
+      ${adminAnnouncementsCardHtml()}
       <div class="card" id="clocked-in-card">
         <div class="card-title">Currently Clocked In</div>
         <div id="clocked-in-body"><span class="muted">Loading…</span></div>
@@ -1753,10 +1813,12 @@ function renderGuardDash(el){
     ${(GV||IMPERSONATE)?`<div class="preview-bar">${IMPERSONATE?'🎭 Impersonating':'👷 Guard view:'} <strong>${(IMPERSONATE||S.guard).name}</strong>${IMPERSONATE?` <button class="btn btn-sm btn-coral" onclick="doImpersonate()" style="margin-left:8px">Stop</button>`:''}</div>`:''}
     ${!GV&&!IMPERSONATE?'<div id="clock-widget"></div>':''}
     ${!GV&&!IMPERSONATE&&PENDING_STATS.length?renderStatsAlerts():''}
+    ${announcementsCardHtml()}
     ${ppCard}
     ${todayShifts.length?`<div class="card"><div class="card-title">📍 Today</div>${shiftCards(todayShifts,true)}</div>`:''}
     ${tasks.length?`<div class="card"><div class="card-title">⚡ Action Needed</div>${tasks.map(t=>`<div class="task-row"><div style="font-size:1.1rem">${t.icon}</div><div style="flex:1;font-size:.87rem">${t.text}</div>${t.btn}</div>`).join('')}</div>`:''}
     ${tideCardHtml()}
+    ${recentBadgesCardHtml()}
     <div class="card">
       <div class="card-title" style="display:flex;align-items:center;justify-content:space-between">
         📅 My Shifts (${upcoming.length})
@@ -2080,12 +2142,21 @@ function renderMobSched(dates, today){
 // ══════════════════════════════════════════
 let FSA_VIEW='post'; // 'post' | 'guard'
 function toggleFsaView(){FSA_VIEW=FSA_VIEW==='post'?'guard':'post';R['full-schedule-admin']();}
+// A shift's start time in minutes-since-midnight (SPEC custom start, else template start),
+// reusing fmtTime to normalize the many stored formats. Unknown times sort last.
+function shiftStartMin(shift){
+  let v=(shift.template_code==='SPEC'&&shift.custom_start)?shift.custom_start:null;
+  if(v==null){const t=D.templates.find(x=>x.code===shift.template_code);if(t)v=t.start_time;}
+  const m=String(fmtTime(v)).match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i);
+  if(!m)return 99999;
+  let h=parseInt(m[1],10)%12;if(/PM/i.test(m[3]))h+=12;
+  return h*60+parseInt(m[2],10);
+}
 
 R['full-schedule-admin']=function(){
   document.getElementById('topbar-actions').innerHTML=`
     <button class="btn btn-navy btn-sm" onclick="showAddShiftModal()">+ Shift</button>
-    <button class="btn btn-outline btn-sm" onclick="showBulkCreateModal()">⚡ Bulk Create</button>
-    <button class="btn btn-green btn-sm" onclick="doPublish('${D.activePeriod?.id}')">📢 Publish</button>`;
+    <button class="btn btn-outline btn-sm" onclick="showBulkCreateModal()">⚡ Bulk Create</button>`;
   const el=document.getElementById('content');
   // Preserve grid scroll position across re-render (e.g. after editing a shift)
   const _prevWrap=el.querySelector('.fsa-wrap');
@@ -2232,7 +2303,7 @@ R['full-schedule-admin']=function(){
         const ds=ymd(d),hol=holiday(ds),we=isWE(ds),isT=ds===today,isSat=d.getDay()===6;
         const satBorder=isSat?'border-left:3px solid var(--ocean);':'';
         const colCls=isT?'col-today':hol?'col-holiday':we?'col-weekend':'';
-        const dayShifts=guardShiftsAll.filter(s=>s.date===ds);
+        const dayShifts=guardShiftsAll.filter(s=>s.date===ds).sort((a,b)=>shiftStartMin(a)-shiftStartMin(b));
         if(dayShifts.length){
           const chips=dayShifts.map(shift=>{
             const pc=postColor(shift.post_id);
@@ -2259,15 +2330,44 @@ R['full-schedule-admin']=function(){
           <div style="text-align:center;font-size:.75rem;color:#d1d5db;line-height:1">+</div>
         </td>`;
       }).join('');
+      // Last availability save — green if on/before the deadline, red if after
+      const _saves=D.avail.filter(a=>String(a.guard_id)===gid&&a.submitted_at).map(a=>a.submitted_at);
+      let lastSaveHtml='';
+      if(_saves.length){
+        const _lastIso=_saves.reduce((m,s)=>s>m?s:m);
+        const _dl=D.activePeriod.availability_deadline?ymd(D.activePeriod.availability_deadline):'';
+        const _onTime=!_dl||ymd(new Date(_lastIso))<=_dl;
+        const _col=_onTime?'var(--green)':'var(--coral)';
+        lastSaveHtml=`<div style="font-size:.56rem;font-weight:600;color:${_col};line-height:1.15;margin-top:1px;white-space:nowrap" title="Last availability save${_dl?' • deadline '+fd(_dl):''}">🕒 ${fdt(_lastIso)}</div>`;
+      }
       tb+=`<tr>
         <td class="name-cell" style="position:sticky;left:0;z-index:10;border-left:3px solid ${rc};padding:3px 8px">
           <div class="flex items-c gap2">
             <div style="width:3px;height:20px;border-radius:2px;background:${rc};flex-shrink:0"></div>
-            <div>${g.name}<div class="muted" style="font-size:.63rem">${g.rank}</div></div>
+            <div>${g.name}<div class="muted" style="font-size:.63rem">${g.rank}</div>${lastSaveHtml}</div>
           </div>
         </td>${cells}
       </tr>`;
     });
+  }
+
+  // Per-week publish bar — one 📢 button above each Saturday–Friday block.
+  // Row is forced position:static (inline beats the sticky `.sg thead th` rule) so
+  // it doesn't collide with the date header at top:0; the corner stays frozen-left.
+  let weekBar='';
+  {
+    const groups=[];
+    dates.forEach(d=>{
+      const wk=weekKey(ymd(d)),last=groups[groups.length-1];
+      if(last&&last.wk===wk)last.count++;else groups.push({wk,count:1});
+    });
+    weekBar=`<tr><th style="position:sticky;left:0;z-index:19;background:#fff;border:none;padding:0;min-width:${nameW}"></th>`;
+    groups.forEach(grp=>{
+      weekBar+=`<th colspan="${grp.count}" style="position:static;background:#fff;border:none;padding:5px 4px 7px;text-align:center">
+        <button class="btn btn-green btn-sm" style="white-space:nowrap" onclick="showPublishWeek('${grp.wk}')">📢 Publish week of ${fds(grp.wk)}</button>
+      </th>`;
+    });
+    weekBar+=`</tr>`;
   }
 
   el.innerHTML=`
@@ -2277,7 +2377,7 @@ R['full-schedule-admin']=function(){
     </div>
     <div class="card" style="padding:${mob?'4px':'8px'}">
       <div class="fsa-wrap">
-        <table class="sg${mob?' mob':''}"><thead>${th}</thead><tbody>${tb}</tbody></table>
+        <table class="sg${mob?' mob':''}"><thead>${weekBar}${th}</thead><tbody>${tb}</tbody></table>
       </div>
     </div>`;
   if(_prevScroll){const w=el.querySelector('.fsa-wrap');if(w){w.scrollLeft=_prevScroll.l;w.scrollTop=_prevScroll.t;}}
@@ -4900,7 +5000,70 @@ function doSendInvite(guardId, guardName) {
   }, guardId);
 }
 function doDeletePost(id){if(!confirm('Mark post inactive?'))return;arun('clientUpdatePost',r=>{if(r&&r.success){toast('Post removed.','warn');run('clientGetPosts',d=>{D.posts=d||[];R.posts();});}},null,{id,active:'FALSE'});}
-function doPublish(pid){if(!pid){toast('No active period.','err');return;}if(!confirm('Publish schedule and email all guards?'))return;aarun('clientPublishSchedule',r=>{if(r&&r.success)toast('Published!','ok');},null,pid);}
+function doPublish(pid){if(!pid){toast('No active period.','err');return;}if(!confirm('Publish schedule and email all guards?'))return;arun('clientPublishSchedule',r=>{if(r&&r.success)toast('Published!','ok');},null,pid);}
+
+// ── PUBLISH WEEK ──────────────────────────────────────────────
+// Email each guard their own Sat–Fri schedule for one week; test to a single guard.
+let PW_WEEK='';
+function showPublishWeek(weekStart){
+  if(!D.activePeriod){toast('No active period.','err');return;}
+  PW_WEEK=weekStart;
+  const base=new Date(weekStart+'T12:00:00'),days=[];
+  for(let i=0;i<7;i++){const d=new Date(base);d.setDate(base.getDate()+i);days.push(d);}
+  const rangeLabel=`${DAYS[days[0].getDay()]} ${MONTHS[days[0].getMonth()]} ${days[0].getDate()} – ${DAYS[days[6].getDay()]} ${MONTHS[days[6].getMonth()]} ${days[6].getDate()}`;
+  const guardOpts=[...D.guards].filter(g=>g.status!=='inactive').sort((a,b)=>String(a.name).localeCompare(String(b.name)))
+    .map(g=>`<option value="${g.id}">${g.name}${g.email?'':' (no email)'}</option>`).join('');
+  showModal(`<div class="modal-title">📢 Publish Week</div>
+    <p class="muted" style="margin:-4px 0 12px;font-size:.85rem">${rangeLabel}</p>
+    <div class="fg"><label>Send to</label>
+      <select id="pw-recip" class="sel" onchange="pwToggleGuard()">
+        <option value="all">All guards (each gets their own schedule)</option>
+        <option value="one">One guard (test)</option>
+      </select>
+    </div>
+    <div class="fg" id="pw-guard-wrap" style="display:none"><label>Guard</label>
+      <select id="pw-guard" class="sel" onchange="pwPreview()">${guardOpts}</select>
+    </div>
+    <div style="margin:8px 0 4px;font-size:.74rem;font-weight:700;letter-spacing:.4px;text-transform:uppercase;color:var(--muted)">Email preview</div>
+    <div id="pw-preview" style="border:1px solid var(--border);border-radius:8px;padding:10px;max-height:320px;overflow:auto;background:#f8fafc">
+      <div class="muted" style="font-size:.82rem">Loading preview…</div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-outline" id="pw-cancel" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-green" id="pw-send" onclick="doPublishWeek()">Send</button>
+    </div>`);
+  pwPreview();
+}
+function pwToggleGuard(){
+  const one=document.getElementById('pw-recip').value==='one';
+  document.getElementById('pw-guard-wrap').style.display=one?'':'none';
+  pwPreview();
+}
+function pwPreview(){
+  const recip=document.getElementById('pw-recip')?.value;
+  const gid=recip==='one'?document.getElementById('pw-guard')?.value:'all';
+  const box=document.getElementById('pw-preview');
+  if(box)box.innerHTML='<div class="muted" style="font-size:.82rem">Loading preview…</div>';
+  arun('clientPreviewWeek',html=>{if(box)box.innerHTML=html||'<div class="muted" style="font-size:.82rem">No preview.</div>';},
+    ()=>{if(box)box.innerHTML='<div class="muted" style="font-size:.82rem">Preview unavailable.</div>';},
+    D.activePeriod.id,PW_WEEK,gid);
+}
+function doPublishWeek(){
+  const recip=document.getElementById('pw-recip')?.value;
+  const recipient=recip==='one'?document.getElementById('pw-guard')?.value:'all';
+  if(recip==='one'&&!recipient){toast('Pick a guard.','err');return;}
+  const g=recip==='one'?D.guards.find(x=>String(x.id)===String(recipient)):null;
+  const msg=recip==='one'?`Send this week's schedule to ${g?g.name:'this guard'} only?`:`Email every guard their own schedule for this week?`;
+  if(!confirm(msg))return;
+  const btn=document.getElementById('pw-send'),cancel=document.getElementById('pw-cancel');
+  if(btn){btn.disabled=true;btn.innerHTML='<span class="spinner"></span> Sending…';}
+  if(cancel)cancel.disabled=true;
+  arun('clientPublishWeek',r=>{
+    if(r&&r.success){toast(`Sent to ${r.sent} guard${r.sent!==1?'s':''}${r.skipped?` · ${r.skipped} skipped (no email)`:''}.`,'ok');closeModal();}
+    else{if(btn){btn.disabled=false;btn.textContent='Send';}if(cancel)cancel.disabled=false;toast(r?.message||'Failed.','err');}
+  },()=>{if(btn){btn.disabled=false;btn.textContent='Send';}if(cancel)cancel.disabled=false;toast('Connection error.','err');},
+    D.activePeriod.id,PW_WEEK,recipient);
+}
 function doLockPeriod(id){if(!confirm('Lock this pay period?'))return;arun('clientLockPeriod',()=>{toast('Period locked.','ok');run('clientGetPeriods',d=>{D.periods=d||[];R.periods();});},null,id);}
 function viewPeriod(id){D.activePeriod=D.periods.find(p=>p.id===id);run('clientGetShifts',r=>{D.shifts=r||[];go('full-schedule-admin');},null,id);}
 function doSetConfig(key){const v=document.getElementById(`cfg-${key}`)?.value;arun('clientSetConfig',r=>{if(r?.success)toast(`Saved: ${key}`,'ok');},null,key,v);}
@@ -4944,6 +5107,7 @@ function ymd(d){
 }
 function fd(s){if(!s)return'';const d=new Date(ymd(s)+'T12:00:00');return isNaN(d)?s:`${MONTHS[d.getMonth()]} ${d.getDate()}, ${d.getFullYear()}`;}
 function fds(s){if(!s)return'';const d=new Date(ymd(s)+'T12:00:00');return isNaN(d)?s:`${MONTHS[d.getMonth()]} ${d.getDate()}`;}
+function fdt(iso){if(!iso)return'';const d=new Date(iso);if(isNaN(d))return'';let h=d.getHours();const ap=h>=12?'PM':'AM';h=h%12||12;return`${MONTHS[d.getMonth()]} ${d.getDate()}, ${h}:${String(d.getMinutes()).padStart(2,'0')} ${ap}`;}
 function badge(id,count){const el=document.getElementById(id);if(!el)return;el.style.display=count>0?'inline':'none';el.textContent=count;}
 function toast(msg,type='info'){
   const c=document.getElementById('toasts'),el=document.createElement('div');
@@ -5057,11 +5221,13 @@ function renderMobGuardDash() {
   const tasks = [];
   const _mPromptPeriod = D.nextPeriod || D.activePeriod;
   const _mPromptAvail = D.nextPeriod ? (D.availNext||[]) : D.avail;
-  if (_mPromptPeriod && !_mPromptAvail.some(a => String(a.guard_id)===gid)) {
+  const _mDismissed = _loadDismissedAvail();
+  if (_mPromptPeriod && !_mPromptAvail.some(a => String(a.guard_id)===gid) && !_mDismissed[_mPromptPeriod.id]) {
     tasks.push(`<div style="background:#fef9c3;border-radius:10px;padding:12px 14px;display:flex;align-items:center;gap:10px;margin-bottom:10px">
       <span style="font-size:1.2rem">🗓</span>
       <div style="flex:1;font-size:.85rem">Set availability for <strong>${fd(_mPromptPeriod.start_date)} – ${fd(_mPromptPeriod.schedule_thru)}</strong></div>
       <button class="btn btn-wave btn-sm" onclick="availViewPeriodId='${_mPromptPeriod.id}';mobGo('my-avail')">Set Now</button>
+      <button class="btn btn-outline btn-sm" style="color:var(--muted)" onclick="dismissAvailReminder('${_mPromptPeriod.id}')" title="Dismiss">✕</button>
     </div>`);
   }
 
@@ -5074,12 +5240,16 @@ function renderMobGuardDash() {
   </div>`:'';
 
   el.innerHTML = `
+    ${!GV&&!IMPERSONATE&&PENDING_STATS.length?renderStatsAlerts():''}
+    ${announcementsCardHtml()}
     ${ppCard}
     ${tasks.join('')}
     ${todayShifts.length ? `<div style="margin-bottom:12px">
       <div style="font-family:'Barlow Condensed',sans-serif;font-size:.82rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:7px">📍 Today</div>
       ${mobShiftCards(todayShifts)}
     </div>` : ''}
+    ${tideCardHtml()}
+    ${recentBadgesCardHtml()}
     <div style="font-family:'Barlow Condensed',sans-serif;font-size:.82rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:7px;display:flex;align-items:center;justify-content:space-between">
       <span>My Shifts (${upcoming.length})</span>
       ${_mobAllOff.length?`<label style="font-size:.76rem;font-weight:400;text-transform:none;letter-spacing:0;display:flex;align-items:center;gap:5px;cursor:pointer"><input type="checkbox" id="hide-days-off-mob" onchange="toggleDaysOff(this)"> Hide days off</label>`:''}
@@ -5446,54 +5616,77 @@ function switchMobAvailPeriod(pid) {
 }
 
 // ── MOBILE: FULL SCHEDULE ─────────────────────────
+let fsMobMode = 'day';   // 'day' | 'list' | 'grid' — guard full-schedule view (Day is default)
+let fsDayDate = null;    // YMD string shown in Day view
+
+// Day view defaults to today, or tomorrow after 5pm.
+function _fsDefaultDay(){
+  const d = new Date();
+  if (d.getHours() >= 17) d.setDate(d.getDate()+1);
+  return ymd(d);
+}
+// Every shift currently loaded client-side (active + next period + any cached periods),
+// deduped by id — lets Day view swipe across days without a per-day server fetch.
+function _fsAllLoadedShifts(){
+  const seen = {}, out = [];
+  const pools = [D.shifts||[], D.shiftsNext||[]];
+  Object.keys(schedShiftCache||{}).forEach(k => pools.push(schedShiftCache[k]||[]));
+  pools.forEach(pool => pool.forEach(s => { if (s && !seen[s.id]) { seen[s.id]=1; out.push(s); } }));
+  return out;
+}
+
 function renderMobFullSchedule() {
   const el = document.getElementById('content');
   if (!D.activePeriod) { el.innerHTML = '<p class="muted">No active pay period.</p>'; return; }
   if (!schedViewPeriodId) schedViewPeriodId = D.activePeriod.id;
-  const vp = getSchedPeriod();
+  if (!fsDayDate) fsDayDate = _fsDefaultDay();
 
-  const today = ymd(new Date());
-  const assigned = getSchedShifts().filter(s => s.status!=='cancelled' && s.assigned_guard_id);
+  // Day view gets a calendar/date navigator; List & Grid keep the pay-period selector.
+  const controlRow = fsMobMode==='day'
+    ? `<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
+        <button class="btn btn-sm" onclick="fsDayShift(-1)" title="Previous day" style="min-width:42px;border:1.5px solid var(--border);background:#fff;color:var(--navy);font-size:1.1rem;font-weight:700">‹</button>
+        <input type="date" id="fs-day-input" value="${fsDayDate}" onchange="fsDaySet(this.value)" style="flex:1;padding:7px 10px;border:1.5px solid var(--border);border-radius:10px;font-family:inherit;font-size:.9rem;text-align:center;color:var(--navy);font-weight:600">
+        <button class="btn btn-sm" onclick="fsDayShift(1)" title="Next day" style="min-width:42px;border:1.5px solid var(--border);background:#fff;color:var(--navy);font-size:1.1rem;font-weight:700">›</button>
+      </div>`
+    : `<div style="margin-bottom:10px">${schedPeriodSel('full-schedule')}</div>`;
 
-  if (!assigned.length) {
-    el.innerHTML = '<div class="empty"><div class="ei">📭</div><p>No shifts published yet.</p></div>';
-    return;
-  }
+  const tab = (mode,label) => `<button class="btn btn-sm" id="fs-${mode}-btn" onclick="fsMobView('${mode}')" style="flex:1;border:1.5px solid var(--border);${fsMobMode===mode?'background:var(--navy);color:#fff;border-color:var(--navy)':'background:#fff;color:var(--muted)'}">${label}</button>`;
 
+  el.innerHTML = `${controlRow}
+    <div style="display:flex;gap:8px;margin-bottom:12px">
+      ${tab('day','📆 Day')}${tab('list','📋 List')}${tab('grid','📅 Grid')}
+    </div>
+    <div id="fs-mob-content"></div>`;
+
+  renderFsMobContent();
+}
+
+function renderFsMobContent(){
+  const content = document.getElementById('fs-mob-content'); if (!content) return;
+  if (fsMobMode==='grid')     renderFsMobGrid(content);
+  else if (fsMobMode==='day') renderFsMobDay(content);
+  else                        renderFsMobList(content);
+}
+
+// One day's schedule grouped by post (all guards). Returns '' when empty unless showEmpty.
+function _fsMobDayCardHtml(d, assigned, today, showEmpty){
   const RANK_ORDER = ['Lifeguard Supervisor','Crew Captain','Captain','Beach Captain','Lieutenant','Vet','Guard','Rookie','Replacement','Volunteer'];
   const rankIdx = r => { const i=RANK_ORDER.indexOf(r); return i<0?99:i; };
+  const ds = ymd(d), hol = holiday(ds), we = isWE(ds), isT = ds===today, isSat = d.getDay()===6;
+  const dayShifts = assigned.filter(s => s.date===ds);
+  if (!dayShifts.length && !showEmpty) return '';
 
-  // Group by date, then by post within each date
-  const dates = dateRange(vp.start_date, vp.schedule_thru)
-    .filter(d => assigned.some(s => s.date===ymd(d)));
+  const borderTop = isSat ? 'border-top:3px solid var(--ocean);' : '';
+  const bg = isT ? '#e0f2fe' : hol ? '#fffbeb' : we ? '#f8fafc' : '#fff';
 
-  let html = `<div style="margin-bottom:10px">${schedPeriodSel('full-schedule')}</div>
-  <div style="display:flex;gap:8px;margin-bottom:12px">
-    <button class="btn btn-outline btn-sm on" id="fs-list-btn" onclick="fsMobView('list')">📋 List</button>
-    <button class="btn btn-outline btn-sm" id="fs-grid-btn" onclick="fsMobView('grid')">📅 Grid</button>
-  </div>
-  <div id="fs-mob-content">`;
-
-  dates.forEach(d => {
-    const ds = ymd(d), hol = holiday(ds), we = isWE(ds), isT = ds===today, isSat = d.getDay()===6;
-    const dayShifts = assigned.filter(s => s.date===ds);
-    if (!dayShifts.length) return;
-
-    const borderTop = isSat ? 'border-top:3px solid var(--ocean);' : '';
-    const bg = isT ? '#e0f2fe' : hol ? '#fffbeb' : we ? '#f8fafc' : '#fff';
-
-    html += `<div style="background:${bg};border-radius:10px;margin-bottom:8px;overflow:hidden;${borderTop}border:1px solid var(--border)">
-      <div style="padding:8px 12px;font-family:'Barlow Condensed',sans-serif;font-weight:700;font-size:.9rem;color:var(--navy);border-bottom:1px solid var(--border)">
-        ${DAYS[d.getDay()]}, ${MONTHS[d.getMonth()]} ${d.getDate()}${hol?' 🏖':''}${isT?' <span style="color:var(--wave)">Today</span>':''}
-      </div>`;
-
-    // Group by post
+  let body = '';
+  if (dayShifts.length) {
     const sortedPosts = [...D.posts].sort((a,b)=>(parseFloat(a.sort_order)||99)-(parseFloat(b.sort_order)||99));
     sortedPosts.forEach(post => {
       const postShifts = dayShifts.filter(s => s.post_id===post.id);
       if (!postShifts.length) return;
       const pc = post.color||'#2176ae';
-      html += `<div style="border-left:3px solid ${pc};margin:4px 8px;border-radius:4px;background:${pc}11;padding:4px 8px">
+      body += `<div style="border-left:3px solid ${pc};margin:4px 8px;border-radius:4px;background:${pc}11;padding:4px 8px">
         <div style="font-size:.68rem;font-weight:700;color:${pc};text-transform:uppercase;margin-bottom:3px">${post.name}</div>`;
       postShifts.sort((a,b)=>{
         const ga=D.guards.find(g=>String(g.id)===String(a.assigned_guard_id));
@@ -5503,41 +5696,82 @@ function renderMobFullSchedule() {
         const g = D.guards.find(x=>String(x.id)===String(s.assigned_guard_id));
         const t = D.templates.find(x=>x.code===s.template_code);
         const rc = RC[g?.rank]||'#94a3b8';
-        html += `<div class="fs-guard-row">
+        body += `<div class="fs-guard-row">
           <div class="rank-dot" style="background:${rc};width:8px;height:8px;border-radius:50%;flex-shrink:0"></div>
           <div style="flex:1;font-size:.83rem;font-weight:600">${g?g.name:'Unknown'}</div>
           <div style="font-size:.75rem;color:var(--muted)">${t?fmtTime(t.start_time)+'–'+fmtTime(t.end_time):s.template_code}</div>
         </div>`;
       });
-      html += '</div>';
+      body += '</div>';
     });
-    html += '</div>';
-  });
+  } else {
+    body = `<div style="padding:18px;text-align:center;color:var(--muted);font-size:.85rem">No shifts scheduled this day.</div>`;
+  }
 
-  html += '</div>';
-  el.innerHTML = html;
+  return `<div style="background:${bg};border-radius:10px;margin-bottom:8px;overflow:hidden;${borderTop}border:1px solid var(--border)">
+    <div style="padding:8px 12px;font-family:'Barlow Condensed',sans-serif;font-weight:700;font-size:.9rem;color:var(--navy);border-bottom:1px solid var(--border)">
+      ${DAYS[d.getDay()]}, ${MONTHS[d.getMonth()]} ${d.getDate()}${hol?' 🏖':''}${isT?' <span style="color:var(--wave)">Today</span>':''}
+    </div>${body}</div>`;
 }
 
-function fsMobView(mode) {
-  document.getElementById('fs-list-btn').classList.toggle('on', mode==='list');
-  document.getElementById('fs-grid-btn').classList.toggle('on', mode==='grid');
-  if (mode==='grid') {
-    // Show scrollable mob-sched grid
-    const content = document.getElementById('fs-mob-content');
-    if (content && D.activePeriod) {
-      const dates = dateRange(D.activePeriod.start_date, D.activePeriod.schedule_thru);
-      renderMobSched(dates, ymd(new Date()));
-      const mobEl = document.getElementById('mob-sched-view');
-      if (mobEl) content.innerHTML = mobEl.innerHTML;
-    }
-  } else {
-    renderMobFullSchedule();
-    // Re-set buttons after re-render
-    setTimeout(()=>{
-      const lb=document.getElementById('fs-list-btn'), gb=document.getElementById('fs-grid-btn');
-      if(lb)lb.classList.add('on'); if(gb)gb.classList.remove('on');
-    },50);
+// LIST: every day in the selected pay period (unchanged behavior).
+function renderFsMobList(content){
+  const vp = getSchedPeriod(); if (!vp) return;
+  const today = ymd(new Date());
+  const assigned = getSchedShifts().filter(s => s.status!=='cancelled' && s.assigned_guard_id);
+  if (!assigned.length) {
+    content.innerHTML = '<div class="empty"><div class="ei">📭</div><p>No shifts published yet.</p></div>';
+    return;
   }
+  const dates = dateRange(vp.start_date, vp.schedule_thru);
+  content.innerHTML = dates.map(d => _fsMobDayCardHtml(d, assigned, today, false)).join('')
+    || '<div class="empty"><div class="ei">📭</div><p>No shifts published yet.</p></div>';
+}
+
+// DAY: a single day, swipeable. Defaults to today (tomorrow after 5pm).
+function renderFsMobDay(content){
+  const today = ymd(new Date());
+  const assigned = _fsAllLoadedShifts().filter(s => s.status!=='cancelled' && s.assigned_guard_id);
+  const d = new Date(fsDayDate+'T12:00:00');
+  content.innerHTML = `<div id="fs-day-swipe" style="min-height:55vh;touch-action:pan-y">
+      ${_fsMobDayCardHtml(d, assigned, today, true)}
+      <div style="text-align:center;color:var(--muted);font-size:.72rem;margin-top:6px">‹ swipe to change day ›</div>
+    </div>`;
+  _attachFsDaySwipe();
+}
+
+// GRID: shared mobile schedule grid for the active period (unchanged behavior).
+function renderFsMobGrid(content){
+  if (!D.activePeriod) return;
+  const dates = dateRange(D.activePeriod.start_date, D.activePeriod.schedule_thru);
+  renderMobSched(dates, ymd(new Date()));
+  const mobEl = document.getElementById('mob-sched-view');
+  if (mobEl) content.innerHTML = mobEl.innerHTML;
+}
+
+function fsDayShift(delta){
+  const d = new Date(fsDayDate+'T12:00:00');
+  d.setDate(d.getDate()+delta);
+  fsDayDate = ymd(d);
+  renderMobFullSchedule(); // refresh the date input + content
+}
+function fsDaySet(v){ if (v) { fsDayDate = v; renderFsMobContent(); } }
+
+function _attachFsDaySwipe(){
+  const z = document.getElementById('fs-day-swipe'); if (!z) return;
+  let x0=null, y0=null;
+  z.addEventListener('touchstart', e => { const t=e.changedTouches[0]; x0=t.clientX; y0=t.clientY; }, {passive:true});
+  z.addEventListener('touchend', e => {
+    if (x0==null) return;
+    const t=e.changedTouches[0], dx=t.clientX-x0, dy=t.clientY-y0;
+    if (Math.abs(dx)>50 && Math.abs(dx)>Math.abs(dy)*1.4) fsDayShift(dx<0?1:-1); // swipe left → next day
+    x0=y0=null;
+  }, {passive:true});
+}
+
+function fsMobView(mode){
+  fsMobMode = mode;
+  renderMobFullSchedule();
 }
 
 // ── MOBILE: PROFILE ───────────────────────────────
@@ -6700,6 +6934,8 @@ R['time-records'] = function() {
   document.getElementById('topbar-actions').innerHTML=`
     <button class="btn btn-outline btn-sm" onclick="exportTimeCSV()">📥 Export CSV</button>
     <button class="btn btn-outline btn-sm" onclick="exportPayrollUpdateCSV(this)">📊 Payroll Update</button>
+    <button class="btn btn-outline btn-sm" onclick="sendPayrollReminderTest(this)">🧪 Test to me</button>
+    <button class="btn btn-outline btn-sm" onclick="sendPayrollReminderEmail(this)">📨 Payroll Reminder</button>
     <button class="btn btn-coral btn-sm" onclick="lockPeriodTime()">🔒 Lock All & Close Period</button>`;
 
   el.innerHTML=`
@@ -7236,6 +7472,43 @@ function exportPayrollUpdateCSV(btn) {
   }, e => { restore(); toast('Export failed: ' + (e?.message||e||'unknown error'), 'err'); }, pid);
 }
 
+// Manually email all guards a "verify your hours" reminder for the shown
+// period. The same email also goes out automatically at 6 AM the morning
+// before each period's payroll-due date (server: payrollReminderCheck).
+function sendPayrollReminderEmail(btn) {
+  const pid = _trPeriodId || D.activePeriod?.id;
+  const p = D.periods.find(x => x.id === pid);
+  if (!p || !(p.time_report_due || p.payroll_due)) {
+    toast('No "Payroll due" date set for this period.','err'); return;
+  }
+  const label = `${fd(p.start_date)} – ${fd(p.end_date||p.schedule_thru)}`;
+  if (!confirm(`Email ALL guards a reminder to verify their hours before payroll for ${label}?\n\nThis sends to everyone on the roster.`)) return;
+  const origLabel = btn ? btn.innerHTML : '';
+  if (btn) { btn.disabled = true; btn.innerHTML = '<span class="spinner"></span> Sending…'; }
+  const restore = () => { if (btn) { btn.disabled = false; btn.innerHTML = origLabel; } };
+  arun('sendPayrollReminder', r => {
+    restore();
+    if (!r || !r.success) { toast(r?.message || 'Send failed.','err'); return; }
+    toast(`Reminder sent to ${r.sent} guard${r.sent===1?'':'s'}${r.skipped?` (${r.skipped} skipped — no email)`:''}.`,
+      r.sent > 0 ? 'ok' : 'warn');
+  }, e => { restore(); toast('Send failed: ' + (e?.message||e||'unknown error'), 'err'); }, pid);
+}
+
+// Send the reminder to JUST the logged-in admin — a safe preview before the
+// real broadcast. Server: sendTestPayrollReminder (does not set the marker).
+function sendPayrollReminderTest(btn) {
+  const pid = _trPeriodId || D.activePeriod?.id;
+  if (!pid) { toast('Pick a pay period first.','err'); return; }
+  const origLabel = btn ? btn.innerHTML : '';
+  if (btn) { btn.disabled = true; btn.innerHTML = '<span class="spinner"></span> Sending…'; }
+  const restore = () => { if (btn) { btn.disabled = false; btn.innerHTML = origLabel; } };
+  arun('sendTestPayrollReminder', r => {
+    restore();
+    if (!r || !r.success) { toast(r?.message || 'Test send failed.','err'); return; }
+    toast(`Test reminder sent to ${r.to}.`, 'ok');
+  }, e => { restore(); toast('Test send failed: ' + (e?.message||e||'unknown error'), 'err'); }, pid);
+}
+
 
 // ════════════════════════════════════════
 // SHIFT STATISTICS
@@ -7278,8 +7551,8 @@ function loadPendingStats(cb) {
 
 function refreshStatsAlerts() {
   if (PANEL === 'dashboard') {
-    const el = document.getElementById('content');
-    if (el) { if (isAdmin()) R.dashboard(); else renderGuardDash(el); }
+    if (isAdmin()) R.dashboard();
+    else _rerenderGuardDash();
   } else if (PANEL === 'stats') {
     R['stats']();
   }
@@ -7297,6 +7570,7 @@ function loadBadges(cb) {
       if (b) toast(`🎉 New badge: ${b.emoji} ${b.name}!`, 'ok');
     });
     if (PANEL === 'stats') renderBadgeGrid();
+    else if (PANEL === 'dashboard' && !isAdmin()) _rerenderGuardDash(); // surface recent-badges card once loaded
     if (cb) cb();
   }, () => { _badgesLoading = false; if (cb) cb(); });
 }
@@ -7308,7 +7582,9 @@ function renderBadgeGrid() {
   el.innerHTML = order.map(b => {
     const p = b.progress;
     let sub;
-    if (b.tally != null) {
+    if (b.tierLevel != null) {
+      sub = `<div class="badge-sub">${b.tierMaxed ? `🏆 ${b.tiers[b.tiers.length-1].label}` : (p ? `${p.current} / ${p.target}` : b.desc)}</div>`;
+    } else if (b.tally != null) {
       sub = `<div class="badge-sub">${b.tally} ${b.tallyLabel||''}</div>`;
     } else if (b.earned) {
       sub = `<div class="badge-sub">${b.earned_at ? 'Earned '+fd(b.earned_at.slice(0,10)) : 'Earned'}</div>`;
@@ -7325,11 +7601,51 @@ function renderBadgeGrid() {
   }).join('');
 }
 
+// Compact "recently earned" badge strip for the guard dashboard. Only the real
+// logged-in guard (not GV/impersonation) has their BADGES loaded, so hide otherwise.
+function recentBadgesCardHtml() {
+  if (GV || IMPERSONATE) return '';
+  const earned = BADGES.filter(b => b.earned)
+    .sort((a,b) => String(b.earned_at||'').localeCompare(String(a.earned_at||'')));
+  if (!earned.length) return '';
+  const recent = earned.slice(0, 4);
+  return `<div class="card" style="margin-bottom:14px">
+    <div class="card-title" style="display:flex;align-items:center;justify-content:space-between">
+      <span>🏅 Recent Badges</span>
+      <button class="btn btn-outline btn-sm" style="color:var(--muted)" onclick="goBadges()">View all →</button>
+    </div>
+    <div style="display:flex;gap:14px;flex-wrap:wrap;padding-top:4px">
+      ${recent.map(b => `<div onclick="showBadgeInfo('${b.key}')" style="text-align:center;cursor:pointer;width:68px">
+        <div style="font-size:2rem;line-height:1">${b.emoji}</div>
+        <div style="font-size:.7rem;font-weight:700;line-height:1.15;margin-top:4px">${b.name}</div>
+        ${b.earned_at ? `<div style="font-size:.63rem;color:var(--muted);margin-top:2px">${fd(b.earned_at.slice(0,10))}</div>` : ''}
+      </div>`).join('')}
+    </div>
+  </div>`;
+}
+function goBadges() { if (!isAdmin() && (IMPERSONATE || isMobile())) mobGo('stats'); else go('stats'); }
+
 function showBadgeInfo(key) {
   const b = BADGES.find(x => x.key === key); if (!b) return;
   const p = b.progress;
   let status;
-  if (b.tally != null) {
+  if (b.tiers) {
+    const ladder = b.tiers.map(t => `<div style="display:flex;align-items:center;gap:10px;padding:5px 2px;${t.reached?'':'opacity:.4'}">
+        <span style="font-size:1.4rem;line-height:1">${t.emoji}</span>
+        <span style="font-weight:700">${t.label}</span>
+        <span style="color:var(--muted);font-size:.8rem">${t.n}+</span>
+        <span style="margin-left:auto">${t.reached?'✅':'🔒'}</span>
+      </div>`).join('');
+    const pct = p && p.target ? Math.min(100, Math.round((p.current / p.target) * 100)) : 0;
+    const bar = b.tierMaxed ? `<div style="margin-top:12px;font-weight:700;color:var(--green)">🏆 Top tier reached — nice work!</div>` :
+      `<div style="margin-top:14px">
+        <div style="display:flex;justify-content:space-between;font-size:.78rem;color:var(--muted);margin-bottom:5px">
+          <span>Toward ${b.nextLabel}</span><span style="font-weight:700;color:var(--navy)">${p.current} / ${p.target}</span>
+        </div>
+        <div class="badge-bar"><div class="badge-bar-fill" style="width:${pct}%"></div></div>
+      </div>`;
+    status = `<div style="margin-top:14px;text-align:left">${ladder}</div>${bar}`;
+  } else if (b.tally != null) {
     status = `<div style="margin-top:16px;font-size:2rem;font-weight:800;color:var(--navy);line-height:1">${b.tally}</div>
       <div style="font-size:.8rem;color:var(--muted);margin-top:2px">${b.tallyLabel||''}</div>`;
   } else if (b.earned) {
@@ -7354,6 +7670,86 @@ function showBadgeInfo(key) {
     <div class="modal-foot">
       <button class="btn btn-navy" onclick="closeModal()">Close</button>
     </div>`);
+}
+
+// ── Badge Leaderboard (guard-facing, paged 10 at a time) ──────
+let _lbData = [];      // [{guard_id,name,count,badges:[{key,name,emoji,desc}]}], most→least
+let _lbPage = 0;
+const LB_PAGE = 10;
+
+function openBadgeLeaderboard() {
+  showModal(`<div class="modal-title">🏆 Badge Leaderboard</div>
+    <div style="font-size:.78rem;color:var(--muted);margin:-8px 0 10px">Tap a badge to see what it is · use ◀ ▶ to page</div>
+    <div id="lb-detail"></div>
+    <div id="lb-body"><div class="muted" style="padding:24px;text-align:center">Loading…</div></div>
+    <div id="lb-nav" style="display:flex;align-items:center;justify-content:space-between;margin-top:10px;gap:8px"></div>
+    <div class="modal-foot"><button class="btn btn-navy" onclick="closeModal()">Close</button></div>`);
+  runG('clientGuardGetBadgeLeaderboard', r => {
+    _lbData = (r || []).filter(g => g.count > 0);
+    _lbPage = 0;
+    renderLbPage();
+  }, () => {
+    const b = document.getElementById('lb-body');
+    if (b) b.innerHTML = '<div class="muted" style="padding:24px;text-align:center">Could not load leaderboard.</div>';
+  });
+}
+
+function lbRow(g, abs) {
+  const rank = abs + 1;
+  const badges = g.badges.map((b, bi) =>
+    `<span onclick="lbBadge(${abs},${bi})" title="${b.name}"
+       style="cursor:pointer;font-size:1.35rem;line-height:1.5;margin-right:4px">${b.emoji}</span>`).join('');
+  return `<div style="display:flex;align-items:flex-start;gap:10px;padding:10px 4px;border-bottom:1px solid var(--border)">
+    <div style="font-weight:800;color:var(--navy);min-width:34px;font-size:1rem">#${rank}</div>
+    <div style="flex:1;min-width:0">
+      <div style="display:flex;justify-content:space-between;gap:8px">
+        <span style="font-weight:700">${g.name}</span>
+        <span style="color:var(--muted);font-size:.8rem;white-space:nowrap">${g.count} badge${g.count !== 1 ? 's' : ''}</span>
+      </div>
+      <div style="margin-top:4px">${badges || '<span style="color:var(--muted);font-size:.8rem">—</span>'}</div>
+    </div>
+  </div>`;
+}
+
+function renderLbPage() {
+  const body = document.getElementById('lb-body'); if (!body) return;
+  if (!_lbData.length) {
+    body.innerHTML = '<div class="muted" style="padding:24px;text-align:center">No badges earned yet — be the first! 🏖️</div>';
+    renderLbNav(); return;
+  }
+  const start = _lbPage * LB_PAGE;
+  body.innerHTML = _lbData.slice(start, start + LB_PAGE).map((g, i) => lbRow(g, start + i)).join('');
+  body.scrollTop = 0;
+  renderLbNav();
+}
+
+function renderLbNav() {
+  const nav = document.getElementById('lb-nav'); if (!nav) return;
+  const total = _lbData.length, pages = Math.ceil(total / LB_PAGE) || 1;
+  const start = _lbPage * LB_PAGE;
+  const from = total ? start + 1 : 0, to = Math.min(start + LB_PAGE, total);
+  nav.innerHTML = `<button class="btn btn-outline btn-sm" ${_lbPage <= 0 ? 'disabled' : ''} onclick="lbShift(-1)">← Prev</button>
+    <span style="color:var(--muted);font-size:.8rem">${from}–${to} of ${total}</span>
+    <button class="btn btn-outline btn-sm" ${_lbPage >= pages - 1 ? 'disabled' : ''} onclick="lbShift(1)">Next →</button>`;
+}
+
+function lbShift(dir) {
+  const pages = Math.ceil(_lbData.length / LB_PAGE) || 1;
+  const np = Math.min(pages - 1, Math.max(0, _lbPage + dir));
+  if (np === _lbPage) return;
+  _lbPage = np;
+  renderLbPage();
+}
+
+function lbBadge(abs, bIdx) {
+  const g = _lbData[abs]; if (!g) return;
+  const b = g.badges[bIdx]; if (!b) return;
+  const el = document.getElementById('lb-detail'); if (!el) return;
+  el.innerHTML = `<div style="background:var(--foam);border:1px solid var(--border);border-radius:10px;padding:10px 12px;margin-bottom:10px;display:flex;gap:10px;align-items:flex-start">
+    <span style="font-size:1.8rem;line-height:1">${b.emoji}</span>
+    <div><div style="font-weight:700;color:var(--navy)">${b.name}</div>
+      <div style="font-size:.82rem;color:var(--muted);line-height:1.4">${b.desc}</div></div>
+  </div>`;
 }
 
 // ── Stats alert banner (shown on guard dashboard) ─────────────
@@ -7505,6 +7901,10 @@ function showStatsModal(rec) {
       ${numField('seabob','Seabob Rescues')}
       ${numField('firstaid','First Aid')}
     </div>
+    <label style="display:flex;align-items:flex-start;gap:8px;font-size:.83rem;cursor:pointer;user-select:none;margin:2px 0 10px;color:var(--navy);font-weight:600">
+      <input type="checkbox" id="ss-assisted-other" style="margin-top:2px;width:16px;height:16px;flex:none">
+      <span>I assisted in a rescue, first aid, or incident credited on another guard's card</span>
+    </label>
     ${numField('incidents','Incidents')}
     <div class="fg" style="margin-bottom:4px">
       <label style="font-size:.75rem">10-55 (Missing Person)</label>
@@ -7562,6 +7962,7 @@ function showStatsModal(rec) {
         if (parseInt(draft[key]) > 0) toggleDesc(id, draft[key]);
       });
       sv('ss-ten55', draft.ten_55);
+      { const ao = document.getElementById('ss-assisted-other'); if (ao) ao.checked = !!draft.assisted_other; }
       ['incidents','ten24','ten34','harassment','vandalism'].forEach(id => {
         const key = {incidents:'incidents_desc',ten24:'ten_24_desc',ten34:'ten_34_desc',harassment:'patron_harassment_desc',vandalism:'vandalism_desc'}[id];
         sv(`ss-${id}-desc`, draft[key]);
@@ -7614,6 +8015,7 @@ function submitStatsForm(timeRecordId, date, shiftId) {
     rfd_line_rescues:    getNum('rfdline'),
     seabob_rescues:      getNum('seabob'),
     first_aid:           getNum('firstaid'),
+    assisted_other:      document.getElementById('ss-assisted-other')?.checked || false,
     incidents:           getNum('incidents'),       incidents_desc:    getDesc('incidents'),
     ten_55:              parseInt(document.getElementById('ss-ten55')?.value)||0, ten_55_desc: '',
     ten_24:              getNum('ten24'),            ten_24_desc:       getDesc('ten24'),
@@ -7674,7 +8076,10 @@ R['stats'] = function() {
     </div>
     ${PENDING_STATS.length ? `<div style="margin-bottom:12px">${renderStatsAlerts()}</div>` : ''}
     <div class="card" style="margin-bottom:12px;padding:14px">
-      <div class="card-title">🏅 Achievements</div>
+      <div class="card-title" style="display:flex;align-items:center;justify-content:space-between">
+        <span>🏅 Achievements</span>
+        <button class="btn btn-outline btn-sm" style="color:var(--muted)" onclick="openBadgeLeaderboard()">🏆 Leaderboard</button>
+      </div>
       <div id="badge-grid"><div class="muted" style="padding:8px">Loading…</div></div>
     </div>
     <div class="card-title" style="margin:14px 4px 8px">📋 Previous Stat Cards</div>
@@ -7716,6 +8121,7 @@ function myStatsCardRow(s) {
       <button class="btn btn-outline btn-xs" onclick="openStatsForm('${s.time_record_id}')">Edit</button>
     </div>
     ${s.training?`<div style="font-size:.72rem;color:var(--muted);margin-top:4px">Training: ${s.training}</div>`:''}
+    ${String(s.assisted_other)==='true'?`<div style="font-size:.72rem;color:var(--wave);margin-top:4px">🤝 Assisted on an action credited to another guard</div>`:''}
   </div>`;
 }
 

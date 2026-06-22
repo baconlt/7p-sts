@@ -21,7 +21,8 @@ const SHEETS = {
   SHIFT_STATS:    'ShiftStats',
   SESSIONS:       'Sessions',
   LOCATIONS:      'Locations',
-  BADGES:         'Badges'
+  BADGES:         'Badges',
+  ANNOUNCEMENTS:  'Announcements'
 };
 
 // ── ENTRY POINT ─────────────────────────────────────────────
@@ -193,7 +194,7 @@ function installTriggers() {
   // Remove any existing triggers for these functions to avoid duplicates
   ScriptApp.getProjectTriggers().forEach(t => {
     const fn = t.getHandlerFunction();
-    if (fn === 'autoClockOutCheck' || fn === 'cleanExpiredSessions') {
+    if (fn === 'autoClockOutCheck' || fn === 'cleanExpiredSessions' || fn === 'payrollReminderCheck') {
       ScriptApp.deleteTrigger(t);
     }
   });
@@ -201,6 +202,11 @@ function installTriggers() {
     .timeBased().everyHours(1).create();
   ScriptApp.newTrigger('cleanExpiredSessions')
     .timeBased().everyDays(1).create();
+  // Payroll-verification reminder — fires daily in the 6 AM hour (project TZ,
+  // America/New_York). Emails all guards the morning before a period's payroll
+  // submission date. See payrollReminderCheck().
+  ScriptApp.newTrigger('payrollReminderCheck')
+    .timeBased().everyDays(1).atHour(6).create();
 }
 
 // Clean up expired sessions (run periodically as trigger)
@@ -215,6 +221,186 @@ function cleanExpiredSessions() {
       sheet.deleteRow(i + 1);
     }
   }
+}
+
+// ── PAYROLL VERIFICATION REMINDER ────────────────────────────
+// The morning before a pay period's time-report submission date, email every
+// active guard asking them to verify their recorded hours. Driven by the daily
+// payrollReminderCheck trigger; can also be fired manually from the Time
+// Records page via sendPayrollReminder().
+
+// "Payroll due" = the date the supervisor submits the time report (with
+// estimates for the tail days). time_report_due is canonical; payroll_due is
+// the legacy fallback — same precedence used by exportPayrollUpdateCSV.
+function periodDueDate_(period) {
+  return toYMD(period.time_report_due) || toYMD(period.payroll_due) || '';
+}
+
+// The reminder goes out the day BEFORE the due date. Noon anchor keeps the
+// day-subtraction DST-safe. Returns '' when no due date is set.
+function reminderDateFor_(period) {
+  const due = periodDueDate_(period);
+  if (!due) return '';
+  const d = new Date(due + 'T12:00:00');
+  d.setDate(d.getDate() - 1);
+  return toYMD(d);
+}
+
+// "2026-06-16" → "Tuesday, June 16"
+function prettyDate_(ymd) {
+  const s = toYMD(ymd);
+  if (!s) return '';
+  const d = new Date(s + 'T12:00:00');
+  if (isNaN(d)) return String(ymd);
+  const DAYS = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+  const MONTHS = ['January','February','March','April','May','June','July','August',
+    'September','October','November','December'];
+  return DAYS[d.getDay()] + ', ' + MONTHS[d.getMonth()] + ' ' + d.getDate();
+}
+
+// Daily trigger: send the reminder on the morning of (due − 1) for any unlocked
+// period whose reminder lands today and hasn't already gone out this cycle.
+function payrollReminderCheck() {
+  const today = toYMD(new Date());
+  getAllPeriods().forEach(period => {
+    if (String(period.locked) === 'true') return;
+    if (reminderDateFor_(period) !== today) return;
+    const markerKey = 'payroll_reminder_sent:' + period.id;
+    if (getConfig(markerKey) === today) return; // already sent — no double email
+    try {
+      sendPayrollReminderForPeriod_(period);
+      writeConfig_(markerKey, today);
+    } catch (e) {
+      Logger.log('payrollReminderCheck error for ' + period.id + ': ' + e.message);
+    }
+  });
+}
+
+// Admin-facing manual send (Time Records "Payroll Reminder" button). Always
+// sends for the chosen period, then stamps the marker so the trigger won't
+// re-send the same day.
+function sendPayrollReminder(token, periodId) {
+  requireAdmin(token);
+  const period = periodById(periodId);
+  if (!period) return { success: false, message: 'Period not found.' };
+  if (!periodDueDate_(period)) {
+    return { success: false, message: 'No "Payroll due" date set for this period.' };
+  }
+  const res = sendPayrollReminderForPeriod_(period);
+  writeConfig_('payroll_reminder_sent:' + period.id, toYMD(new Date()));
+  return { success: true, sent: res.sent, skipped: res.skipped };
+}
+
+// Send the reminder to JUST YOU — a safe preview that never touches the roster.
+// Does not set the sent-marker, so the real reminder still goes out as normal.
+//   • From the app: the "🧪 Test to me" button passes your session token.
+//   • From the Apps Script editor: select this function and click Run with no
+//     args — it emails the script owner (Session.getActiveUser()).
+function sendTestPayrollReminder(token, periodId) {
+  let to = '';
+  if (token) {
+    requireAdmin(token);
+    const sess = validateSession(token);
+    const g = sess && sess.guardId ? findGuardById(sess.guardId) : null;
+    if (g && g.email) to = g.email;
+  }
+  if (!to) { try { to = Session.getActiveUser().getEmail() || ''; } catch (e) {} }
+  if (!to) return { success: false, message: 'Could not determine your email address.' };
+
+  const period = periodId ? periodById(periodId) : getActivePeriod();
+  if (!period) return { success: false, message: 'No pay period found.' };
+
+  const me    = findGuardByEmail(to) || { name: to, email: to };
+  const start = toYMD(period.start_date);
+  const end   = toYMD(period.end_date) || toYMD(period.schedule_thru);
+  const mail  = buildPayrollReminderEmail_(me, start, end);
+  MailApp.sendEmail({
+    to: to,
+    subject: '[TEST] [7 Presidents STS] Verify your hours — payroll submits tomorrow',
+    body: mail.text, htmlBody: mail.html
+  });
+  Logger.log('Test payroll reminder sent to ' + to);
+  return { success: true, to: to };
+}
+
+// Shared core: email every active guard with an address on file. Returns counts.
+function sendPayrollReminderForPeriod_(period) {
+  const start = toYMD(period.start_date);
+  const end   = toYMD(period.end_date) || toYMD(period.schedule_thru);
+  const subject = '[7 Presidents STS] Verify your hours — payroll submits tomorrow';
+  let sent = 0, skipped = 0;
+  getAllGuards().forEach(g => {
+    if (!g.email) { skipped++; return; }
+    try {
+      const mail = buildPayrollReminderEmail_(g, start, end);
+      MailApp.sendEmail({ to: g.email, subject: subject, body: mail.text, htmlBody: mail.html });
+      SH(SHEETS.NOTIFICATIONS).appendRow([uid('N'), g.id, 'payroll_reminder',
+        'Payroll verification reminder for ' + start + ' – ' + end + ' sent.',
+        new Date().toISOString(), 'email']);
+      sent++;
+    } catch (e) {
+      Logger.log('payroll reminder error for ' + g.email + ': ' + e.message);
+      skipped++;
+    }
+  });
+  return { sent: sent, skipped: skipped };
+}
+
+// Branded HTML + plain-text reminder for one guard.
+function buildPayrollReminderEmail_(guard, start, end) {
+  const firstRaw = String(guard.name || '').split(' ')[0];
+  const first    = escapeHtml_(firstRaw);
+  const url      = ScriptApp.getService().getUrl();
+  const startP   = prettyDate_(start);
+  const endP     = prettyDate_(end);
+
+  const text =
+    'Hi ' + firstRaw + ',\n\n' +
+    'Your supervisor is submitting payroll for ' + startP + ' through ' + endP +
+    ' tomorrow morning.\n\n' +
+    'Please take a moment now to review ALL hours recorded for you from ' + startP +
+    ' through today and make sure they are correct.\n\n' +
+    'If you find any mistakes, DM the Supe right away or talk to him in person to get it ' +
+    'straightened out before the end of the day today. Once payroll is submitted tomorrow ' +
+    'morning, corrections are much harder to make.\n\n' +
+    'Review your hours: ' + url + '\n\n' +
+    '— 7 Presidents STS · Scheduling Hub for Ocean Rescue & Events';
+
+  const html =
+    '<div style="font-family:Arial,Helvetica,sans-serif;max-width:540px;margin:0 auto;color:#0f172a">' +
+      '<div style="background:#0c2a43;color:#fff;padding:16px 20px;border-radius:8px 8px 0 0">' +
+        '<div style="font-size:18px;font-weight:700">7 Presidents STS</div>' +
+        '<div style="font-size:13px;opacity:.85">Payroll Verification &middot; Action needed today</div>' +
+      '</div>' +
+      '<div style="border:1px solid #e2e8f0;border-top:none;border-radius:0 0 8px 8px;padding:16px 20px">' +
+        '<p style="margin:0 0 12px">Hi ' + first + ',</p>' +
+        '<p style="margin:0 0 14px;font-size:14px">Your supervisor is submitting payroll for ' +
+          '<strong>' + escapeHtml_(startP) + '</strong> through <strong>' + escapeHtml_(endP) + '</strong> ' +
+          '<strong>tomorrow morning</strong>.</p>' +
+        '<p style="margin:0 0 14px;font-size:14px">Please take a moment <strong>now</strong> to review all hours ' +
+          'recorded for you from <strong>' + escapeHtml_(startP) + '</strong> through today and make sure they are correct.</p>' +
+        '<p style="margin:0 0 14px;font-size:14px;background:#fff7ed;border-left:3px solid #f97316;padding:10px 12px">' +
+          'If you find any mistakes, <strong>DM the Supe right away</strong> or talk to him in person to get it ' +
+          'straightened out <strong>before the end of the day today</strong>. Once payroll is submitted tomorrow ' +
+          'morning, corrections are much harder to make.</p>' +
+        '<p style="margin:16px 0 0;font-size:13px"><a href="' + url + '" style="color:#2176ae">Review your hours &rarr;</a></p>' +
+        '<p style="margin:14px 0 0;font-size:12px;color:#94a3b8">&mdash; 7 Presidents STS &middot; Scheduling Hub for Ocean Rescue &amp; Events</p>' +
+      '</div>' +
+    '</div>';
+
+  return { html: html, text: text };
+}
+
+// Config writer usable from triggers — setConfig() requires an admin token,
+// which a time-based trigger doesn't have.
+function writeConfig_(key, value) {
+  const sheet = SH(SHEETS.CONFIG);
+  if (!sheet) return;
+  const data = sheet.getDataRange().getValues();
+  for (let i = 1; i < data.length; i++) {
+    if (String(data[i][0]) === key) { sheet.getRange(i + 1, 2).setValue(value); return; }
+  }
+  sheet.appendRow([key, value]);
 }
 
 // ── AUTH FUNCTIONS ───────────────────────────────────────────
@@ -873,17 +1059,22 @@ function submitAvailability(token, entries) {
     }
     const ex = existing.find(x => x.guard_id === e.guard_id && toYMD(x.date) === toYMD(e.date));
     const isOff = s => s === 'FIXED_OFF' || s === 'FLEX_OFF';
+    // Only stamp submitted_at when the guard themselves saves, so admin day-off
+    // overrides don't masquerade as the guard's last availability submission.
+    const isGuardSave = session.role === 'guard';
     if (ex) {
       // Preserve the guard's original request when an admin "day off" overrides it,
       // so we can still show what was denied. Cleared when a real request is set.
       let requested_status = '';
       if (isOff(e.status)) requested_status = !isOff(ex.status) && ex.status ? ex.status : (ex.requested_status || '');
-      updateById(SHEETS.AVAILABILITY, { id: ex.id, status: e.status, requested_status,
-        custom_start: e.custom_start||'', custom_end: e.custom_end||'', ot_willing: e.ot_willing||false, notes: e.notes||'' });
+      const upd = { id: ex.id, status: e.status, requested_status,
+        custom_start: e.custom_start||'', custom_end: e.custom_end||'', ot_willing: e.ot_willing||false, notes: e.notes||'' };
+      if (isGuardSave) upd.submitted_at = new Date().toISOString();
+      updateById(SHEETS.AVAILABILITY, upd);
     } else {
       appendRow(SHEETS.AVAILABILITY, { id: uid('AV'), guard_id: e.guard_id, date: e.date, status: e.status, requested_status: '',
         custom_start: e.custom_start||'', custom_end: e.custom_end||'', ot_willing: e.ot_willing||false, notes: e.notes||'',
-        submitted_at: new Date().toISOString() });
+        submitted_at: isGuardSave ? new Date().toISOString() : '' });
     }
   }
   return { success: true };
@@ -1068,6 +1259,46 @@ function setConfig(key, value) {
   return { success: true };
 }
 
+// ── ANNOUNCEMENTS ────────────────────────────────────────────
+// Admin-posted notices shown on every guard's dashboard. Multi-message feed.
+
+function ensureAnnouncementsSheet_() {
+  let sheet = SH(SHEETS.ANNOUNCEMENTS);
+  if (!sheet) {
+    sheet = SS().insertSheet(SHEETS.ANNOUNCEMENTS);
+    const headers = ['id','message','created_at','created_by'];
+    sheet.getRange(1, 1, 1, headers.length).setValues([headers])
+      .setBackground('#0d2137').setFontColor('#ffffff').setFontWeight('bold');
+    sheet.setFrozenRows(1);
+  }
+  return sheet;
+}
+
+function getAnnouncements() {
+  ensureAnnouncementsSheet_();
+  return sheetToObjects(SHEETS.ANNOUNCEMENTS)
+    .sort((a,b) => String(b.created_at||'').localeCompare(String(a.created_at||''))); // newest first
+}
+
+function addAnnouncement(message, authorName) {
+  ensureAnnouncementsSheet_();
+  const msg = String(message || '').trim();
+  if (!msg) return { success: false, message: 'Message is empty.' };
+  const id = uid('A');
+  appendRow(SHEETS.ANNOUNCEMENTS, { id, message: msg, created_at: new Date().toISOString(), created_by: authorName || '' });
+  return { success: true, id };
+}
+
+function deleteAnnouncement(id) {
+  const sheet = SH(SHEETS.ANNOUNCEMENTS);
+  if (!sheet) return { success: true };
+  const data = sheet.getDataRange().getValues();
+  for (let i = data.length - 1; i >= 1; i--) {
+    if (String(data[i][0]) === String(id)) { sheet.deleteRow(i + 1); break; }
+  }
+  return { success: true };
+}
+
 // ── NOTIFICATIONS ────────────────────────────────────────────
 
 function notify(guardId, type, message) {
@@ -1115,6 +1346,143 @@ function publishSchedule(periodId) {
   return { success: true };
 }
 
+// ── WEEKLY SCHEDULE PUBLISH ──────────────────────────────────
+// Emails each guard (or one guard, for testing) their own Saturday–Friday
+// schedule for the given week. recipient = 'all' or a specific guard id.
+const OFF_LABELS_ = { FIXED_OFF: 'Day Off', FLEX_OFF: 'Flex Day Off' };
+const DOW_ = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+const MON_ = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+
+function weekDays_(weekStart) {
+  const base = new Date(toYMD(weekStart) + 'T12:00:00'), out = [];
+  for (let i = 0; i < 7; i++) { const d = new Date(base); d.setDate(base.getDate() + i); out.push(toYMD(d)); }
+  return out;
+}
+function dayLabel_(ds) { const d = new Date(ds + 'T12:00:00'); return DOW_[d.getDay()] + ' ' + MON_[d.getMonth()] + ' ' + d.getDate(); }
+function escapeHtml_(s) { return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
+function fmt12_(val) {
+  if (val === '' || val == null) return '';
+  if (val instanceof Date) {
+    let h = val.getHours(); const m = val.getMinutes(), ap = h >= 12 ? 'PM' : 'AM'; h = h % 12 || 12;
+    return h + ':' + String(m).padStart(2, '0') + ' ' + ap;
+  }
+  const s = String(val).trim();
+  if (!s || s === 'TBD' || s === 'Custom' || s === '—') return s;
+  if (/^\d{1,2}:\d{2}\s*(AM|PM)$/i.test(s)) return s.toUpperCase();
+  const sec = s.match(/^(\d{1,2}:\d{2}):\d{2}\s*(AM|PM)$/i);
+  if (sec) return (sec[1] + ' ' + sec[2]).toUpperCase();
+  const h24 = s.match(/^(\d{1,2}):(\d{2})(?::\d{2})?$/);
+  if (h24) { let h = parseInt(h24[1], 10); const ap = h >= 12 ? 'PM' : 'AM'; h = h % 12 || 12; return h + ':' + h24[2] + ' ' + ap; }
+  return s;
+}
+function shiftTimeStr_(shift, tmplByCode) {
+  if (shift.template_code === 'SPEC' && (shift.custom_start || shift.custom_end))
+    return fmt12_(shift.custom_start) + '–' + fmt12_(shift.custom_end);
+  const t = tmplByCode[shift.template_code];
+  if (t && t.start_time && t.start_time !== 'Custom' && t.start_time !== 'TBD')
+    return fmt12_(t.start_time) + '–' + fmt12_(t.end_time);
+  return '';
+}
+// Minutes since midnight for any time value (Date, "8:45 AM", "8:45:00 AM", "17:15"); null if unparseable.
+function timeToMinutes_(val) {
+  if (val == null || val === '') return null;
+  if (val instanceof Date) return val.getHours() * 60 + val.getMinutes();
+  const s = String(val).trim();
+  let m = s.match(/^(\d{1,2}):(\d{2})(?::\d{2})?\s*(AM|PM)$/i);
+  if (m) { let h = parseInt(m[1], 10) % 12; if (/PM/i.test(m[3])) h += 12; return h * 60 + parseInt(m[2], 10); }
+  m = s.match(/^(\d{1,2}):(\d{2})(?::\d{2})?$/);
+  if (m) return parseInt(m[1], 10) * 60 + parseInt(m[2], 10);
+  return null;
+}
+// Sort key: a shift's start time in minutes (SPEC custom start, else template start). Unknown times sort last.
+function shiftStartMinutes_(shift, tmplByCode) {
+  let v = (shift.template_code === 'SPEC' && shift.custom_start) ? shift.custom_start : null;
+  if (v == null) {
+    const t = tmplByCode[shift.template_code];
+    if (t && t.start_time && t.start_time !== 'Custom' && t.start_time !== 'TBD') v = t.start_time;
+  }
+  const mins = timeToMinutes_(v);
+  return mins == null ? 99999 : mins;
+}
+
+// Gather the shared data needed to render any guard's week.
+function weekContext_(weekStart) {
+  const days = weekDays_(weekStart), ws = days[0], we = days[6];
+  const postById = {}; getAllPosts().forEach(po => postById[po.id] = po);
+  const tmplByCode = {}; getAllTemplates().forEach(t => tmplByCode[t.code] = t);
+  const shifts = sheetToObjects(SHEETS.SHIFTS).filter(s => { const d = toYMD(s.date); return d >= ws && d <= we && s.status !== 'cancelled'; });
+  const avail = sheetToObjects(SHEETS.AVAILABILITY).filter(a => { const d = toYMD(a.date); return d >= ws && d <= we; });
+  return { days, postById, tmplByCode, shifts, avail };
+}
+
+function buildWeekScheduleHtml_(guard, ctx) {
+  const gid = String(guard.id);
+  let anyShift = false;
+  const rows = ctx.days.map(ds => {
+    const dayShifts = ctx.shifts.filter(s => toYMD(s.date) === ds && String(s.assigned_guard_id) === gid)
+      .sort((a, b) => shiftStartMinutes_(a, ctx.tmplByCode) - shiftStartMinutes_(b, ctx.tmplByCode));
+    let cell;
+    if (dayShifts.length) {
+      anyShift = true;
+      cell = dayShifts.map(s => {
+        const pName = ctx.postById[s.post_id] ? ctx.postById[s.post_id].name : 'Shift';
+        const tm = shiftTimeStr_(s, ctx.tmplByCode);
+        return '<strong>' + escapeHtml_(pName) + '</strong>' + (tm ? ' &middot; <span style="color:#334155">' + tm + '</span>' : '');
+      }).join('<br>');
+    } else {
+      const av = ctx.avail.find(a => String(a.guard_id) === gid && toYMD(a.date) === ds);
+      cell = '<span style="color:#94a3b8">' + (av && OFF_LABELS_[av.status] ? OFF_LABELS_[av.status] : 'Off') + '</span>';
+    }
+    const dow = new Date(ds + 'T12:00:00').getDay(), wknd = dow === 0 || dow === 6;
+    return '<tr' + (wknd ? ' style="background:#f1f5f9"' : '') + '>' +
+      '<td style="padding:8px 12px;border-bottom:1px solid #e2e8f0;white-space:nowrap;font-weight:600;color:#0f172a">' + dayLabel_(ds) + '</td>' +
+      '<td style="padding:8px 12px;border-bottom:1px solid #e2e8f0;font-size:14px">' + cell + '</td></tr>';
+  }).join('');
+  const intro = anyShift ? 'Here is your schedule for the week:' : 'You have no shifts scheduled this week:';
+  const url = ScriptApp.getService().getUrl();
+  return '<div style="font-family:Arial,Helvetica,sans-serif;max-width:540px;margin:0 auto;color:#0f172a">' +
+      '<div style="background:#0c2a43;color:#fff;padding:16px 20px;border-radius:8px 8px 0 0">' +
+        '<div style="font-size:18px;font-weight:700">7 Presidents STS</div>' +
+        '<div style="font-size:13px;opacity:.85">Weekly Schedule &middot; ' + dayLabel_(ctx.days[0]) + ' – ' + dayLabel_(ctx.days[6]) + '</div>' +
+      '</div>' +
+      '<div style="border:1px solid #e2e8f0;border-top:none;border-radius:0 0 8px 8px;padding:16px 20px">' +
+        '<p style="margin:0 0 12px">Hi ' + escapeHtml_(String(guard.name || '').split(' ')[0]) + ',</p>' +
+        '<p style="margin:0 0 14px;font-size:14px">' + intro + '</p>' +
+        '<table style="border-collapse:collapse;width:100%;border:1px solid #e2e8f0;border-radius:6px;overflow:hidden">' + rows + '</table>' +
+        '<p style="margin:16px 0 0;font-size:13px"><a href="' + url + '" style="color:#2176ae">Open the scheduling hub &rarr;</a></p>' +
+        '<p style="margin:12px 0 0;font-size:13px;color:#334155">See the Lifeguard Supervisor if you think there is a mistake.</p>' +
+        '<p style="margin:14px 0 0;font-size:12px;color:#94a3b8">&mdash; 7 Presidents STS &middot; Scheduling Hub for Ocean Rescue &amp; Events</p>' +
+      '</div>' +
+    '</div>';
+}
+
+function publishWeek(periodId, weekStart, recipient) {
+  if (!periodById(periodId)) return { success: false, message: 'Period not found.' };
+  const ctx = weekContext_(weekStart);
+  let guards = getAllGuards();
+  if (recipient && recipient !== 'all') guards = guards.filter(g => String(g.id) === String(recipient));
+  const subject = '[7 Presidents STS] Your schedule — ' + dayLabel_(ctx.days[0]) + ' to ' + dayLabel_(ctx.days[6]);
+  let sent = 0, skipped = 0;
+  guards.forEach(g => {
+    if (!g.email) { skipped++; return; }
+    try {
+      MailApp.sendEmail({ to: g.email, subject: subject, htmlBody: buildWeekScheduleHtml_(g, ctx) });
+      SH(SHEETS.NOTIFICATIONS).appendRow([uid('N'), g.id, 'schedule_published',
+        'Weekly schedule ' + ctx.days[0] + ' – ' + ctx.days[6] + ' sent.', new Date().toISOString(), 'email']);
+      sent++;
+    } catch (e) { Logger.log('publishWeek error for ' + g.email + ': ' + e.message); skipped++; }
+  });
+  return { success: true, sent, skipped };
+}
+
+function previewWeekSchedule(periodId, weekStart, guardId) {
+  const ctx = weekContext_(weekStart);
+  let guard = (guardId && guardId !== 'all') ? findGuardById(guardId) : null;
+  if (!guard) guard = getAllGuards()[0];
+  if (!guard) return '<p style="font-family:Arial">No guards found.</p>';
+  return buildWeekScheduleHtml_(guard, ctx);
+}
+
 // ── SETUP ────────────────────────────────────────────────────
 
 function setupSpreadsheet() {
@@ -1145,7 +1513,8 @@ function setupSpreadsheet() {
                     'ten_34','ten_34_desc',
                     'patron_harassment','patron_harassment_desc',
                     'vandalism','vandalism_desc',
-                    'training','surf_condition','wind_direction','air_temp','weather','flags_flown','notes'],
+                    'training','surf_condition','wind_direction','air_temp','weather','flags_flown','notes',
+                    'assisted_other'],
     Sessions:      ['token','guard_id','role','created_at','expires_at'],
     Badges:        ['id','guard_id','badge_key','earned_at','meta']
   };
@@ -1242,6 +1611,7 @@ function submitShiftStats(token, d) {
     rfd_line_rescues:      d.rfd_line_rescues || 0,
     seabob_rescues:        d.seabob_rescues || 0,
     first_aid:             d.first_aid || 0,
+    assisted_other:        d.assisted_other ? 'true' : '',
     incidents:             d.incidents || 0,
     incidents_desc:        d.incidents_desc || '',
     ten_55:                d.ten_55 || 0,
@@ -1313,7 +1683,7 @@ function exportShiftStatsCSV(token, periodId) {
   const period = periodId ? periodById(periodId) : null;
 
   const headers = ['Guard','Date','Beach','Preventive','Bather Assists','RFD Rescues',
-    'RFD+Line','Seabob','First Aid','Incidents','Incidents Desc',
+    'RFD+Line','Seabob','First Aid','Assisted (Other Card)','Incidents','Incidents Desc',
     '10-55','10-55 Desc','10-24','10-24 Desc','10-34','10-34 Desc',
     'Patron Harassment','Harassment Desc','Vandalism','Vandalism Desc',
     'Training','Surf','Wind','Air Temp','Weather','Flags','Notes','Submitted'];
@@ -1322,6 +1692,7 @@ function exportShiftStatsCSV(token, periodId) {
     s.guard_name||s.guard_id, s.date, s.beach_location,
     s.preventive_actions||0, s.bather_assists||0, s.rfd_rescues||0,
     s.rfd_line_rescues||0, s.seabob_rescues||0, s.first_aid||0,
+    String(s.assisted_other)==='true'?'Yes':'',
     s.incidents||0, s.incidents_desc||'',
     s.ten_55||0, s.ten_55_desc||'',
     s.ten_24||0, s.ten_24_desc||'',
@@ -1521,15 +1892,15 @@ const BADGE_DEFS = [
     desc:'Logged your first rescue',
     earned: c => c.totalRescues >= 1,
     progress: c => ({ current: Math.min(c.totalRescues, 1), target: 1 }) },
-  { key:'rescues_10', name:'Baywatch I', emoji:'🛟', category:'Rescues',
+  { key:'rescues_10', name:'Baywatch', emoji:'🛟', category:'Rescues',
     desc:'10 rescues logged (RFD, line & seabob combined)',
     earned: c => c.totalRescues >= 10,
     progress: c => ({ current: Math.min(c.totalRescues, 10), target: 10 }) },
-  { key:'rescues_25', name:'Baywatch II', emoji:'🛟', category:'Rescues',
+  { key:'rescues_25', name:'C.J. Parker', emoji:'🛟', category:'Rescues',
     desc:'25 rescues logged (RFD, line & seabob combined)',
     earned: c => c.totalRescues >= 25,
     progress: c => ({ current: Math.min(c.totalRescues, 25), target: 25 }) },
-  { key:'rescues_50', name:'Baywatch III', emoji:'🛟', category:'Rescues',
+  { key:'rescues_50', name:'Mitch Buchannon', emoji:'🛟', category:'Rescues',
     desc:'50 rescues logged (RFD, line & seabob combined)',
     earned: c => c.totalRescues >= 50,
     progress: c => ({ current: Math.min(c.totalRescues, 50), target: 50 }) },
@@ -1553,6 +1924,10 @@ const BADGE_DEFS = [
     desc:'Logged every workout type at least once',
     earned: c => c.allWorkoutsDone,
     progress: c => ({ current: c.workoutsSeen, target: c.workoutsTotal }) },
+  { key:'ryan_matthews', name:'Ryan Matthews', emoji:'🚣', category:'Skills',
+    desc:'Logged a Run, Swim, Row, Paddle and Surf Ski',
+    earned: c => c.rmComboDone,
+    progress: c => ({ current: c.rmComboSeen, target: 5 }) },
   { key:'storm_shift', name:'Storm Chaser', emoji:'⛈️', category:'Weather',
     desc:'Worked a shift in thunder & lightning',
     earned: c => c.stormCards >= 1,
@@ -1565,6 +1940,10 @@ const BADGE_DEFS = [
     desc:'Worked a 10-hour late shift without an auto clock-out',
     earned: c => c.tenHourNoAuto >= 1,
     progress: c => ({ current: Math.min(c.tenHourNoAuto, 1), target: 1 }) },
+  { key:'always_be_closing', name:'ABC: Always Be Closing', emoji:'🌇', category:'Endurance',
+    desc:'Closed the beach 10 times — clocked out at the 7:15 PM end of a late shift',
+    earned: c => c.closingShifts >= 10,
+    progress: c => ({ current: Math.min(c.closingShifts, 10), target: 10 }) },
   { key:'sleepyhead', name:'Sleepyhead', emoji:'😴', category:'Hall of Shame',
     desc:'Auto-clocked-out 3 times — remember to clock out!',
     earned: c => c.autoClockOuts >= 3,
@@ -1585,6 +1964,14 @@ const BADGE_DEFS = [
     desc:'100 lifetime hours on the stand',
     earned: c => c.totalHours >= 100,
     progress: c => ({ current: Math.min(Math.floor(c.totalHours), 100), target: 100 }) },
+  { key:'hours_500', name:'Quincenturion', emoji:'🏅', category:'Endurance',
+    desc:'500 hours on the stand in a single season',
+    earned: c => c.maxSeasonHours >= 500,
+    progress: c => ({ current: Math.min(Math.floor(c.maxSeasonHours), 500), target: 500 }) },
+  { key:'hours_1000', name:'Millenarian', emoji:'👑', category:'Endurance',
+    desc:'1000 hours on the stand in a single season',
+    earned: c => c.maxSeasonHours >= 1000,
+    progress: c => ({ current: Math.min(Math.floor(c.maxSeasonHours), 1000), target: 1000 }) },
   { key:'tourn_3', name:'Competitor', emoji:'🏆', category:'Endurance',
     desc:'Worked 3 tournament shifts',
     earned: c => c.tournShifts >= 3,
@@ -1612,7 +1999,69 @@ const BADGE_DEFS = [
   { key:'ten_in_a_row', name:'Unbroken', emoji:'🔥', category:'Endurance',
     desc:'Worked 10 days in a row',
     earned: c => c.maxConsecutiveDays >= 10,
-    progress: c => ({ current: Math.min(c.maxConsecutiveDays, 10), target: 10 }) }
+    progress: c => ({ current: Math.min(c.maxConsecutiveDays, 10), target: 10 }) },
+  { key:'nomad', name:'The Nomad', emoji:'🐪', category:'Skills',
+    desc:'Worked a day at all three post areas — Kiernan, Atlantic/Avenel and Joline/Sea View',
+    earned: c => c.postGroupsCovered >= 3,
+    progress: c => ({ current: c.postGroupsCovered, target: 3 }) },
+  { key:'freedom_isnt_free', name:"Freedom Isn't Free", emoji:'🗽', category:'Endurance',
+    desc:'Worked both Juneteenth and the Fourth of July in one summer',
+    earned: c => c.maxFreedomDays >= 2,
+    progress: c => ({ current: Math.min(c.maxFreedomDays, 2), target: 2 }) },
+  { key:'paper_pusher', name:'Paper Pusher', emoji:'🗂️', category:'Diligence',
+    desc:'Submitted 5 incident reports',
+    earned: c => c.totalIncidents >= 5,
+    progress: c => ({ current: Math.min(c.totalIncidents, 5), target: 5 }) },
+  { key:'tyson', name:'Tyson', emoji:'🥊', category:'Rescues',
+    desc:'Witnessed 3 fights between patrons (10-34)',
+    earned: c => c.totalTen34 >= 3,
+    progress: c => ({ current: Math.min(c.totalTen34, 3), target: 3 }) },
+  { key:'the_narc', name:'The Narc', emoji:'🐀', category:'Rescues',
+    desc:'Reported drugs/alcohol (10-24) 5 times',
+    earned: c => c.totalTen24 >= 5,
+    progress: c => ({ current: Math.min(c.totalTen24, 5), target: 5 }) },
+  { key:'party_pooper', name:'Party Pooper', emoji:'💩', category:'Rescues',
+    desc:'Reported drugs/alcohol (10-24) 10 times',
+    earned: c => c.totalTen24 >= 10,
+    progress: c => ({ current: Math.min(c.totalTen24, 10), target: 10 }) },
+  // Leveling badge — reports of patrons harassing lifeguards (Bronze 1 → Silver 3 → Gold 5).
+  { key:'sticks_and_stones', name:'Sticks and Stones', emoji:'🪨', category:'Rescues',
+    desc:'Reported patrons harassing lifeguards',
+    metric: c => c.totalPatronHarassment,
+    tiers: [
+      { n:1, label:'Bronze', emoji:'🥉' },
+      { n:3, label:'Silver', emoji:'🥈' },
+      { n:5, label:'Gold',   emoji:'🥇' }
+    ],
+    earned: c => c.totalPatronHarassment >= 1,
+    progress: c => ({ current: Math.min(c.totalPatronHarassment, 5), target: 5 }) },
+  { key:'the_picasso', name:'The Picasso', emoji:'🎨', category:'Rescues',
+    desc:'Reported vandalism 3 times',
+    earned: c => c.totalVandalism >= 3,
+    progress: c => ({ current: Math.min(c.totalVandalism, 3), target: 3 }) },
+  { key:'lindbergh_baby', name:'The Lindbergh Baby', emoji:'🍼', category:'Rescues',
+    desc:'Logged 3 missing persons (10-55) in a single day',
+    earned: c => c.maxTen55Day >= 3,
+    progress: c => ({ current: Math.min(c.maxTen55Day, 3), target: 3 }) },
+  { key:'matchmaker', name:'The Matchmaker', emoji:'💘', category:'Rescues',
+    desc:'Reunited 10 missing persons (10-55) across the season',
+    earned: c => c.totalTen55 >= 10,
+    progress: c => ({ current: Math.min(c.totalTen55, 10), target: 10 }) },
+  // Leveling badge — a single tile that climbs Bronze → Silver → Gold → Platinum
+  // as the guard racks up assists credited to another guard's card. The `tiers`
+  // + `metric` fields trigger the tiered branch in getBadgeState(); `earned`/
+  // `progress` stay defined so the leaderboard and any tier-unaware code work.
+  { key:'consolation_prize', name:'Consolation Prize', emoji:'🎗️', category:'Rescues',
+    desc:"Assisted on rescues, first aid, or incidents credited to another guard's card",
+    metric: c => c.assistedOther,
+    tiers: [
+      { n:1,  label:'Bronze',   emoji:'🥉' },
+      { n:5,  label:'Silver',   emoji:'🥈' },
+      { n:10, label:'Gold',     emoji:'🥇' },
+      { n:30, label:'Platinum', emoji:'🏆' }
+    ],
+    earned: c => c.assistedOther >= 1,
+    progress: c => ({ current: Math.min(c.assistedOther, 30), target: 30 }) }
 ];
 
 // Load all sheet data a guard's badges depend on, once. Pure metric math then
@@ -1658,6 +2107,12 @@ function computeBadgeMetrics_(data, cutoff) {
   const workoutSeen = new Set(), weatherSeen = new Set();
   let totalRescues = 0, totalSeabob = 0, totalBatherAssists = 0, totalFirstAid = 0;
   let maxRescuesInShift = 0, knowledgeCards = 0, stormCards = 0;
+  // Incident-report tallies + post-area coverage for the duty/post badges.
+  let totalIncidents = 0, totalTen34 = 0, totalTen55 = 0, totalTen24 = 0, totalPatronHarassment = 0, totalVandalism = 0;
+  // Stat cards where the guard assisted on an action credited to another card.
+  let assistedOther = 0;
+  const ten55ByDay = {};
+  const postGroups = { kiernan: false, atlantic: false, joline: false };
   myStats.forEach(s => {
     const cardRescues = (parseInt(s.rfd_rescues) || 0)
       + (parseInt(s.rfd_line_rescues) || 0) + (parseInt(s.seabob_rescues) || 0);
@@ -1666,6 +2121,21 @@ function computeBadgeMetrics_(data, cutoff) {
     totalSeabob += (parseInt(s.seabob_rescues) || 0);
     totalBatherAssists += (parseInt(s.bather_assists) || 0);
     totalFirstAid += (parseInt(s.first_aid) || 0);
+    totalIncidents += (parseInt(s.incidents) || 0);
+    totalTen34 += (parseInt(s.ten_34) || 0);
+    totalTen24 += (parseInt(s.ten_24) || 0);
+    totalPatronHarassment += (parseInt(s.patron_harassment) || 0);
+    totalVandalism += (parseInt(s.vandalism) || 0);
+    if (String(s.assisted_other) === 'true') assistedOther++;
+    const card55 = parseInt(s.ten_55) || 0;
+    totalTen55 += card55;
+    const day55 = toYMD(s.date);
+    if (day55) ten55ByDay[day55] = (ten55ByDay[day55] || 0) + card55;
+    // Group the beach location into one of the three post areas.
+    const loc = String(s.beach_location || '').trim();
+    if (loc.indexOf('Kiernan') === 0) postGroups.kiernan = true;
+    else if (loc === 'Atlantic' || loc === 'Avenel') postGroups.atlantic = true;
+    else if (loc === 'Joline' || loc === 'Sea View') postGroups.joline = true;
     const items = String(s.training || '').split(',').map(x => x.trim());
     if (items.indexOf('Lifeguard Knowledge') >= 0) knowledgeCards++;
     items.forEach(it => { if (WORKOUT_ITEMS.indexOf(it) >= 0) workoutSeen.add(it); });
@@ -1673,8 +2143,14 @@ function computeBadgeMetrics_(data, cutoff) {
     if (wx) weatherSeen.add(wx);
     if (wx === 'Thunder/Lightning') stormCards++;
   });
+  const maxTen55Day = Object.values(ten55ByDay).reduce((m, v) => Math.max(m, v), 0);
+  const postGroupsCovered = Object.values(postGroups).filter(Boolean).length;
   const workoutsSeen = workoutSeen.size, workoutsTotal = WORKOUT_ITEMS.length;
   const allWorkoutsDone = workoutsSeen === workoutsTotal;
+  // "Ryan Matthews" combo — the five surf-lifesaving disciplines, each logged.
+  const RM_COMBO = ['Run', 'Swim', 'Row', 'Paddle', 'Surf Ski'];
+  const rmComboSeen = RM_COMBO.filter(w => workoutSeen.has(w)).length;
+  const rmComboDone = rmComboSeen === RM_COMBO.length;
   const weatherSeenCount = WEATHER_TYPES.filter(w => weatherSeen.has(w)).length;
   const weatherTypesTotal = WEATHER_TYPES.length;
   const allWeatherDone = weatherSeenCount === weatherTypesTotal;
@@ -1726,8 +2202,30 @@ function computeBadgeMetrics_(data, cutoff) {
   });
   const maxLateShiftsPeriod = Object.values(lateByPeriod).reduce((m, v) => Math.max(m, v), 0);
 
+  // "Always Be Closing" — manually clocked out at the 7:15 PM close of a late
+  // shift (within ~30 min of 7:15), not auto-clocked-out. Counts the closes.
+  const CLOSE_MIN = 18 * 60 + 45, CLOSE_MAX = 19 * 60 + 45; // 6:45 PM – 7:45 PM
+  const closingShifts = completed.filter(r => {
+    if (String(r.auto_clocked_out) === 'true') return false;
+    const shift = r.shift_id ? shiftsById[r.shift_id] : null;
+    if (!shift || !LATE_CODES.has(shift.template_code)) return false;
+    const out = timeToMinutes_(r.clock_out);
+    return out !== null && out >= CLOSE_MIN && out <= CLOSE_MAX;
+  }).length;
+
   // Lifetime hours, forgotten clock-outs, and tournament shifts.
   const totalHours = completed.reduce((sum, r) => sum + (parseInt(r.total_minutes) || 0), 0) / 60;
+
+  // Hours grouped by season (calendar year — the season runs within one summer),
+  // for the single-season hour badges. Take the best season so the badge, once
+  // earned, persists into future years even though most awards reset annually.
+  const minutesByYear = {};
+  completed.forEach(r => {
+    const yr = toYMD(r.date).slice(0, 4);
+    if (!yr) return;
+    minutesByYear[yr] = (minutesByYear[yr] || 0) + (parseInt(r.total_minutes) || 0);
+  });
+  const maxSeasonHours = Object.values(minutesByYear).reduce((m, v) => Math.max(m, v), 0) / 60;
   const autoClockOuts = completed.filter(r => String(r.auto_clocked_out) === 'true').length;
   const tournShifts = completed.filter(r => {
     const shift = r.shift_id ? shiftsById[r.shift_id] : null;
@@ -1765,12 +2263,30 @@ function computeBadgeMetrics_(data, cutoff) {
   const maxHolidaysInSummer = Object.values(holidaysByYear)
     .reduce((m, set) => Math.max(m, set.size), 0);
 
-  return { statsStreak, tenHourNoAuto, maxShiftMinutes, maxLateShiftsPeriod,
+  // "Freedom Isn't Free" — worked both Juneteenth (Jun 19) and July 4 in one summer.
+  const freedomByYear = {};
+  workedDays.forEach(day => {
+    const [, mm, dd] = day.split('-').map(Number);
+    let f = '';
+    if (mm === 6 && dd === 19) f = 'juneteenth';
+    else if (mm === 7 && dd === 4) f = 'july4';
+    if (!f) return;
+    const yr = day.slice(0, 4);
+    (freedomByYear[yr] = freedomByYear[yr] || new Set()).add(f);
+  });
+  const maxFreedomDays = Object.values(freedomByYear)
+    .reduce((m, set) => Math.max(m, set.size), 0);
+
+  return { statsStreak, tenHourNoAuto, maxShiftMinutes, maxLateShiftsPeriod, closingShifts,
     maxTenHourWeek, maxConsecutiveDays,
     totalRescues, knowledgeCards, stormCards, workoutsSeen, workoutsTotal, allWorkoutsDone,
+    rmComboSeen, rmComboDone,
     totalSeabob, totalBatherAssists, totalFirstAid, maxRescuesInShift,
     weatherSeenCount, weatherTypesTotal, allWeatherDone,
-    totalHours, autoClockOuts, tournShifts, workedHoliday, maxHolidaysInSummer };
+    totalHours, maxSeasonHours, autoClockOuts, tournShifts, workedHoliday, maxHolidaysInSummer,
+    totalIncidents, totalTen34, totalTen55, totalTen24, totalPatronHarassment, totalVandalism,
+    maxTen55Day, postGroupsCovered, maxFreedomDays,
+    assistedOther };
 }
 
 // Replay each earned badge's predicate through the guard's activity dates and
@@ -1839,25 +2355,25 @@ function getBadgeState(token) {
 
   const data = loadBadgeData_(guardId);
   const ctx = computeBadgeMetrics_(data, null);
-  const owned = {};
+  const ownedRows = {};
   sheetToObjects(SHEETS.BADGES)
     .filter(b => String(b.guard_id) === guardId)
-    .forEach(b => { owned[b.badge_key] = b.earned_at; });
+    .forEach(b => { ownedRows[b.badge_key] = b; });
 
-  // Data-derived earned dates for every currently-earned badge.
-  const earnedKeys = BADGE_DEFS.filter(d => d.earned(ctx)).map(d => d.key);
+  // Data-derived earned dates for every currently-earned simple badge. Tiered
+  // badges resolve their own per-tier dates inside tieredBadgeState_().
+  const earnedKeys = BADGE_DEFS.filter(d => !d.tiers && d.earned(ctx)).map(d => d.key);
   const earnedDates = computeEarnedDates_(data, earnedKeys);
 
   const newlyEarned = [];
   const badges = BADGE_DEFS.map(def => {
+    if (def.tiers) return tieredBadgeState_(def, ctx, data, guardId, ownedRows, newlyEarned);
     const isEarned = !!def.earned(ctx);
     const earnedAt = isEarned ? (earnedDates[def.key] || '') : '';
-    if (isEarned && !owned.hasOwnProperty(def.key)) {
-      appendRow(SHEETS.BADGES, {
-        id: uid('BDG'), guard_id: guardId, badge_key: def.key,
-        earned_at: earnedAt, meta: ''
-      });
-      owned[def.key] = earnedAt;
+    if (isEarned && !ownedRows.hasOwnProperty(def.key)) {
+      const row = { id: uid('BDG'), guard_id: guardId, badge_key: def.key, earned_at: earnedAt, meta: '' };
+      appendRow(SHEETS.BADGES, row);
+      ownedRows[def.key] = row;
       newlyEarned.push(def.key);
     }
     return {
@@ -1873,6 +2389,62 @@ function getBadgeState(token) {
   return { badges, newlyEarned };
 }
 
+// Display state for a leveling (tiered) badge. Renders the highest medal tier
+// reached plus progress toward the next, persists the reached level in the
+// Badges row's `meta` column, and reports a level-up via newlyEarned so the
+// client toasts each new tier. earned_at tracks the current tier's true date.
+function tieredBadgeState_(def, ctx, data, guardId, ownedRows, newlyEarned) {
+  const tiers = def.tiers;
+  const val = def.metric(ctx);
+  const level = tiers.filter(t => val >= t.n).length;   // 0 .. tiers.length
+  const cur = level > 0 ? tiers[level - 1] : null;
+  const next = tiers[level] || null;
+  const earned = level > 0;
+  const earnedAt = cur ? tierEarnedDate_(data, def.metric, cur.n) : '';
+
+  // Persist / level-up: a row's meta holds the highest tier number reached.
+  const row = ownedRows[def.key];
+  const prevLevel = row ? (parseInt(row.meta) || 0) : 0;
+  if (earned && level > prevLevel) {
+    if (row) {
+      updateById(SHEETS.BADGES, { id: row.id, earned_at: earnedAt, meta: level });
+      row.earned_at = earnedAt; row.meta = level;
+    } else {
+      const newRow = { id: uid('BDG'), guard_id: guardId, badge_key: def.key, earned_at: earnedAt, meta: level };
+      appendRow(SHEETS.BADGES, newRow);
+      ownedRows[def.key] = newRow;
+    }
+    newlyEarned.push(def.key);
+  }
+
+  return {
+    key: def.key,
+    name: cur ? `${def.name} — ${cur.label}` : def.name,
+    emoji: cur ? cur.emoji : def.emoji,
+    desc: def.desc, category: def.category,
+    earned: earned, earned_at: earnedAt,
+    // Progress always points at the next tier (or the final tier when maxed) so
+    // the tile keeps showing forward motion even after the first tier is earned.
+    progress: { current: val, target: next ? next.n : (cur ? cur.n : tiers[0].n) },
+    tierLevel: level, tierMax: tiers.length, tierMaxed: earned && !next,
+    nextLabel: next ? next.label : '',
+    tiers: tiers.map(t => ({ n: t.n, label: t.label, emoji: t.emoji, reached: val >= t.n }))
+  };
+}
+
+// Earliest activity date at which a tiered metric first reached `threshold`,
+// replaying the same metric math used live (so historical data dates correctly).
+function tierEarnedDate_(data, metricFn, threshold) {
+  const dates = [...new Set([
+    ...data.completed.map(r => toYMD(r.date)),
+    ...data.myStats.map(s => toYMD(s.date))
+  ])].filter(Boolean).sort();
+  for (const d of dates) {
+    if (metricFn(computeBadgeMetrics_(data, d)) >= threshold) return d;
+  }
+  return '';
+}
+
 // Admin: badge counts per guard, most badges first. Badges are evaluated from
 // live data (the same way a guard's own stats page does) rather than read from
 // the persisted Badges sheet — that sheet only gains a row when a guard opens
@@ -1880,7 +2452,12 @@ function getBadgeState(token) {
 // out of sync with what each guard actually sees.
 function getBadgeLeaderboard(token) {
   requireAdmin(token);
+  return computeBadgeLeaderboard_();
+}
 
+// Shared leaderboard computation (no auth gate — callers gate access). Returns
+// every guard with their earned-badge count and badge list, most badges first.
+function computeBadgeLeaderboard_() {
   // Load the shared sheets once, then group the per-guard slices.
   const completedByGuard = {};
   sheetToObjects(SHEETS.TIME_RECORDS)
@@ -1912,13 +2489,30 @@ function getBadgeLeaderboard(token) {
       guard_id: g.id,
       name: g.name,
       count: earned.length,
-      badges: earned.map(d => ({ key: d.key, name: d.name, emoji: d.emoji, desc: d.desc }))
+      badges: earned.map(d => badgeDisplay_(d, ctx))
     };
   }).sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
 }
 
+// Display tuple for a badge given a metric ctx. Tiered (leveling) badges resolve
+// to the guard's current medal tier so the leaderboard matches their own grid;
+// simple badges use their static name/emoji.
+function badgeDisplay_(def, ctx) {
+  if (def.tiers) {
+    const val = def.metric(ctx);
+    const cur = def.tiers[def.tiers.filter(t => val >= t.n).length - 1] || def.tiers[0];
+    return { key: def.key, name: `${def.name} — ${cur.label}`, emoji: cur.emoji, desc: def.desc };
+  }
+  return { key: def.key, name: def.name, emoji: def.emoji, desc: def.desc };
+}
+
 function clientGetBadgeState(token)       { return getBadgeState(token); }
 function clientGetBadgeLeaderboard(token) { return getBadgeLeaderboard(token); }
+// Guard-facing leaderboard — any logged-in guard may view the team standings.
+function clientGuardGetBadgeLeaderboard(token) {
+  if (!getSessionFromToken(token)) return [];
+  return computeBadgeLeaderboard_();
+}
 
 function clientAdminDismissLastShift(token, timeRecordId) {
   requireAdmin(token);
@@ -2092,6 +2686,8 @@ function clientCreatePeriod(token,d)       { requireAdmin(token); return createP
 function clientUpdatePeriod(token,d)       { requireAdmin(token); return updatePeriod(d); }
 function clientLockPeriod(token,id)        { requireAdmin(token); return lockPeriod(id); }
 function clientPublishSchedule(token,id)   { requireAdmin(token); return publishSchedule(id); }
+function clientPublishWeek(token,periodId,weekStart,recipient) { requireAdmin(token); return publishWeek(periodId, weekStart, recipient); }
+function clientPreviewWeek(token,periodId,weekStart,guardId)   { requireAdmin(token); return previewWeekSchedule(periodId, weekStart, guardId); }
 function clientSubmitAvailability(token,e) { return submitAvailability(token, e); }
 function clientDeleteAvailability(token,guardId,dateStr) { requireAdmin(token); return deleteAvailability(guardId, dateStr); }
 function clientRequestShift(sid)          { return requestShift(sid); }
@@ -2217,6 +2813,11 @@ function clientGetLocations(token)         { requireAdmin(token); return getLoca
 function clientCreateLocation(token, d)    { requireAdmin(token); return createLocation(d); }
 function clientUpdateLocation(token, d)    { requireAdmin(token); return updateLocation(d); }
 function clientDeleteLocation(token, id)   { requireAdmin(token); return deleteLocation(id); }
+
+// ── Announcements (read = any user; write = admin) ──
+function clientGetAnnouncements()              { return getAnnouncements(); }
+function clientAddAnnouncement(token, message) { const s = requireAdmin(token); const g = findGuardById(s.guardId); return addAnnouncement(message, g ? g.name : 'Admin'); }
+function clientDeleteAnnouncement(token, id)   { requireAdmin(token); return deleteAnnouncement(id); }
 
 // Clock in
 function clockIn(d) {

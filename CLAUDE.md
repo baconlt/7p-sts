@@ -60,4 +60,6 @@ Clipboard shortcut: `! cat apps-script/<file> | pbcopy`
 
 ## Sheets
 Guards, Posts, ShiftTemplates, Shifts, Availability, PayPeriods,
-Config, Notifications, TimeRecords, ShiftStats, Sessions, Locations
+Config, Notifications, TimeRecords, ShiftStats, Sessions, Locations,
+Badges, Announcements
+- `Announcements` (id, message, created_at, created_by) is auto-created on first read via `ensureAnnouncementsSheet_()` — no manual setup needed. Admin-posted feed shown on all guard dashboards.
