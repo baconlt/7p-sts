@@ -131,6 +131,7 @@ body{font-family:'Barlow',sans-serif;background:var(--foam);color:var(--text);mi
 .chip-8HR{background:#dbeafe;color:#1e40af;} .chip-LS8{background:#ede9fe;color:#5b21b6;}
 .chip-LS{background:#fce7f3;color:#9d174d;} .chip-LS10{background:#d1fae5;color:#065f46;}
 .chip-SPEC{background:#fef3c7;color:#92400e;} .chip-MISC{background:#f3f4f6;color:#374151;}
+.chip-CADET{background:#fce7f3;color:#9d174d;}
 
 /* ══════════════════════════════════════════════════
    COMBINED SCHEDULE+AVAILABILITY GRID — CALENDAR MODE
@@ -445,8 +446,8 @@ body{font-family:'Barlow',sans-serif;background:var(--foam);color:var(--text);mi
 .tr-edited{font-size:.65rem;color:var(--sun);font-weight:700;}
 .tr-locked{font-size:.65rem;color:var(--muted);}
 .location-note{font-size:.72rem;color:var(--muted);display:flex;align-items:center;gap:4px;margin-top:6px;justify-content:center;}
-.tide-date-btn{background:var(--foam);border:1.5px solid var(--border);border-radius:14px;padding:3px 10px;font-size:.75rem;font-weight:600;color:var(--muted);cursor:pointer;transition:all .15s;}
-.tide-date-btn.on{background:var(--navy);border-color:var(--navy);color:#fff;}
+.tide-date-btn,.wx-date-btn{background:var(--foam);border:1.5px solid var(--border);border-radius:14px;padding:3px 10px;font-size:.75rem;font-weight:600;color:var(--muted);cursor:pointer;transition:all .15s;}
+.tide-date-btn.on,.wx-date-btn.on{background:var(--navy);border-color:var(--navy);color:#fff;}
 .tide-row{display:flex;align-items:center;gap:11px;padding:7px 0;}
 .tide-row+.tide-row{border-top:1px solid var(--border);}
 .tide-row-icon{font-size:1.25rem;width:28px;text-align:center;}
@@ -454,6 +455,15 @@ body{font-family:'Barlow',sans-serif;background:var(--foam);color:var(--text);mi
 .tide-row-time{font-weight:700;font-size:.9rem;}
 .tide-row-sub{font-size:.77rem;color:var(--muted);}
 .tide-row-ht{font-family:'Barlow Condensed',sans-serif;font-size:1.05rem;font-weight:700;color:var(--navy);}
+.wx-grid{display:flex;align-items:center;gap:14px;}
+.wx-now{flex:0 0 auto;text-align:center;padding-right:14px;border-right:1px solid var(--border);}
+.wx-now-cap{font-size:.66rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:1px;}
+.wx-now-temp{font-family:'Barlow Condensed',sans-serif;font-size:2.2rem;font-weight:800;color:var(--navy);line-height:1;}
+.wx-now-cond{font-size:.77rem;color:var(--muted);margin-top:2px;}
+.wx-stats{flex:1;display:flex;justify-content:space-around;gap:8px;}
+.wx-stat{display:flex;flex-direction:column;align-items:center;gap:2px;}
+.wx-stat-lbl{font-size:.72rem;color:var(--muted);}
+.wx-stat-val{font-family:'Barlow Condensed',sans-serif;font-size:1.25rem;font-weight:700;color:var(--navy);}
 
 /* ── EASTER EGG: Seven Presidents modal ── */
 #sp-trigger{font-family:'Barlow Condensed',sans-serif;font-size:1.05rem;font-weight:800;letter-spacing:1px;color:var(--navy);cursor:default;user-select:none;flex-shrink:0;}
@@ -642,7 +652,7 @@ body{font-family:'Barlow',sans-serif;background:var(--foam);color:var(--text);mi
   </div>
 </div>
 
-<div class="overlay" id="overlay" onclick="overlayClick(event)"><div class="modal" id="modal"></div></div>
+<div class="overlay" id="overlay" onpointerdown="overlayDown(event)" onclick="overlayClick(event)"><div class="modal" id="modal"></div></div>
 <div class="toasts" id="toasts"></div>
 <div id="pop-portal" style="position:fixed;top:0;left:0;width:0;height:0;z-index:2000;pointer-events:none"></div>
 
@@ -906,7 +916,7 @@ function adminAnnouncementsCardHtml() {
     <div class="card-title">📣 Announcements</div>
     <div class="flex gap2" style="margin-bottom:10px;align-items:flex-start">
       <textarea id="ann-input" rows="2" placeholder="Post an announcement for all guards…" style="flex:1;padding:8px 10px;border:1.5px solid var(--border);border-radius:10px;font-family:inherit;font-size:.86rem;resize:vertical"></textarea>
-      <button class="btn btn-wave btn-sm" onclick="doAddAnnouncement()">Post</button>
+      <button id="ann-post-btn" class="btn btn-wave btn-sm" onclick="doAddAnnouncement()">Post</button>
     </div>
     ${list.length ? list.map(a => `<div style="display:flex;gap:10px;align-items:flex-start;padding:9px 0;border-top:1px solid var(--border)">
       <div style="flex:1">
@@ -921,11 +931,15 @@ function doAddAnnouncement() {
   const inp = document.getElementById('ann-input'); if (!inp) return;
   const msg = inp.value.trim();
   if (!msg) { toast('Type an announcement first.','warn'); return; }
+  const btn = document.getElementById('ann-post-btn');
+  const restore = () => { if (btn) { btn.disabled = false; btn.textContent = 'Post'; } };
+  if (btn) { btn.disabled = true; btn.textContent = 'Posting…'; }
   arun('clientAddAnnouncement', r => {
     if (r && r.success) {
-      run('clientGetAnnouncements', rr => { D.announcements = rr||[]; if(PANEL==='dashboard')R.dashboard(); toast('Announcement posted.','ok'); });
-    } else toast((r&&r.message)||'Could not post announcement.','err');
-  }, null, msg);
+      // On success the dashboard re-renders (rebuilding this button), so no restore needed.
+      run('clientGetAnnouncements', rr => { D.announcements = rr||[]; if(PANEL==='dashboard')R.dashboard(); toast('Announcement posted.','ok'); }, () => { restore(); toast('Posted, but could not refresh the feed.','warn'); });
+    } else { restore(); toast((r&&r.message)||'Could not post announcement.','err'); }
+  }, () => { restore(); toast('Could not post announcement.','err'); }, msg);
 }
 function doDeleteAnnouncement(id) {
   if (!confirm('Delete this announcement?')) return;
@@ -961,7 +975,99 @@ function tideSelectDate(which, btn) {
   if(m) m.style.display=which==='tomorrow'?'':'none';
 }
 
+// WEATHER — Long Branch, NJ (live via Open-Meteo, server-cached 1hr).
+// Session-cached in _WX so dashboard re-renders are instant; the first
+// render kicks off a fetch and fills #weather-body when it returns.
+let _WX=null, _WXLoading=false;
+function weatherCardHtml() {
+  if(!_WX && !_WXLoading){
+    _WXLoading=true;
+    run('clientGetWeather', wx=>{ _WXLoading=false; if(wx) _WX=wx; _fillWeather(); }, ()=>{ _WXLoading=false; _fillWeather(); });
+  }
+  return `<div class="card" style="margin-bottom:14px">
+    <div class="card-title" style="display:flex;align-items:center;justify-content:space-between">
+      <span id="wx-title">${_WX?_WX.today.icon:'🌤️'} Weather — Long Branch</span>
+      <div style="display:flex;gap:5px">
+        <button class="wx-date-btn on" onclick="wxSelectDate('today',this)">Today</button>
+        <button class="wx-date-btn" onclick="wxSelectDate('tomorrow',this)">Tomorrow</button>
+      </div>
+    </div>
+    <div id="weather-body">${_WX?_weatherPanesHtml():'<span class="muted" style="font-size:.82rem">Loading…</span>'}</div>
+  </div>`;
+}
+function _weatherPanesHtml(){
+  return `<div id="wx-pane-today">${_weatherBodyHtml(_WX.today,true)}</div>
+    <div id="wx-pane-tomorrow" style="display:none">${_weatherBodyHtml(_WX.tomorrow,false)}</div>`;
+}
+function _fillWeather(){
+  const el=document.getElementById('weather-body');
+  if(!el) return;
+  if(!_WX){ el.innerHTML='<span class="muted" style="font-size:.82rem">Weather unavailable right now.</span>'; return; }
+  el.innerHTML=_weatherPanesHtml();
+  const ti=document.getElementById('wx-title'); if(ti) ti.textContent=_WX.today.icon+' Weather — Long Branch';
+}
+function wxSelectDate(which,btn){
+  document.querySelectorAll('.wx-date-btn').forEach(b=>b.classList.remove('on'));
+  btn.classList.add('on');
+  const t=document.getElementById('wx-pane-today'), m=document.getElementById('wx-pane-tomorrow');
+  if(t) t.style.display=which==='today'?'':'none';
+  if(m) m.style.display=which==='tomorrow'?'':'none';
+}
+function _weatherBodyHtml(wx,isToday){
+  const t=v=>(v==null?'—':v+'°');
+  const big=isToday?wx.current_temp:wx.hi;
+  const stat=(l,v)=>`<div class="wx-stat"><span class="wx-stat-lbl">${l}</span><span class="wx-stat-val">${t(v)}</span></div>`;
+  const stats=isToday
+    ? stat('High',wx.hi)+stat('Low',wx.lo)+stat('🌊 Water',wx.water_temp)
+    : stat('Low',wx.lo)+stat('🌊 Water',wx.water_temp);
+  return `<div class="wx-grid">
+    <div class="wx-now">
+      <div class="wx-now-cap">${isToday?'Now':'High'}</div>
+      <div class="wx-now-temp">${t(big)}</div>
+      <div class="wx-now-cond">${wx.icon||''} ${wx.condition||'—'}</div>
+    </div>
+    <div class="wx-stats">${stats}</div>
+  </div>`;
+}
 
+// CALENDAR SUBSCRIPTION — personal iCal feed a guard adds to their phone.
+let _calUrl=null;
+function calSubscribeCardHtml(){
+  return `<div class="card" style="margin-top:14px">
+    <div class="card-title">📲 Add shifts to your phone calendar</div>
+    <div style="font-size:.83rem;color:var(--muted);margin-bottom:10px">Subscribe once and your assigned shifts appear in Apple Calendar or Google Calendar — and stay updated automatically.</div>
+    <div id="cal-sub-body">${_calUrl?_calLinkHtml(_calUrl):'<button class="btn btn-wave btn-sm" onclick="loadCalLink()">Get my calendar link</button>'}</div>
+  </div>`;
+}
+function loadCalLink(){
+  const body=document.getElementById('cal-sub-body'); if(!body) return;
+  if(_calUrl){ body.innerHTML=_calLinkHtml(_calUrl); return; }
+  body.innerHTML='<span class="muted" style="font-size:.82rem">Generating…</span>';
+  runG('clientGetMyCalUrl', r=>{
+    if(r&&r.success){ _calUrl=r; body.innerHTML=_calLinkHtml(r); }
+    else body.innerHTML='<span class="muted" style="font-size:.82rem">Could not generate link. Try again.</span>';
+  }, ()=>{ body.innerHTML='<span class="muted" style="font-size:.82rem">Could not generate link. Try again.</span>'; });
+}
+function _calLinkHtml(r){
+  return `<div style="font-size:.82rem">
+    <div style="display:flex;gap:6px;margin-bottom:8px">
+      <input id="cal-url-inp" class="inp" readonly value="${_esc(r.url)}" style="flex:1;font-size:.74rem" onclick="this.select()">
+      <button class="btn btn-outline btn-sm" onclick="copyCalUrl()">Copy</button>
+    </div>
+    <div class="flex gap2 wrap">
+      <a class="btn btn-wave btn-sm" href="${_esc(r.webcal)}">＋ Apple Calendar</a>
+      <a class="btn btn-outline btn-sm" href="https://calendar.google.com/calendar/r/settings/addbyurl" target="_blank" rel="noopener">＋ Google Calendar</a>
+    </div>
+    <div style="font-size:.74rem;color:var(--muted);margin-top:8px">📱 <strong>iPhone:</strong> tap "＋ Apple Calendar" and confirm Subscribe. 🟦 <strong>Google:</strong> tap Copy, open "＋ Google Calendar", and paste the link under "From URL". Calendars refresh on their own every few hours.</div>
+  </div>`;
+}
+function copyCalUrl(){
+  const inp=document.getElementById('cal-url-inp'); if(!inp) return;
+  inp.select();
+  const ok=()=>toast('Link copied.','ok');
+  if(navigator.clipboard&&navigator.clipboard.writeText) navigator.clipboard.writeText(inp.value).then(ok,()=>{document.execCommand('copy');ok();});
+  else { document.execCommand('copy'); ok(); }
+}
 
 // Post color helper
 function postColor(postId){
@@ -1009,7 +1115,7 @@ const AV_SHORT = {
   S_8HR_OT:     'OT',
 };
 // Templates shown in assign/edit shift dropdowns
-const ASSIGN_TMPL_CODES = ['8HR','LS8','LS','SPEC','TOURN'];
+const ASSIGN_TMPL_CODES = ['8HR','LS8','LS','SPEC','TOURN','CADET'];
 // Which statuses include late shift availability
 const AV_LATE = new Set(['S_LS8','S_LS','S_8HR_LS']);
 // Which statuses mean guard is available at all
@@ -1172,6 +1278,7 @@ let mobAvailChanges={};
 let CLOCK_STATUS={clocked_in:false,record:null};
 let PENDING_STATS=[]; // time records needing stats forms
 let BADGES=[]; // earned + locked achievement badges for the logged-in guard
+let SLACK_ON=false; // true when admin configured a Slack webhook (enables auto-post)
 let SNOOZED_STATS={}; // {time_record_id: snooze_until_date} // current clock-in state
 const _DISMISSED_AVAIL_KEY='sts_dismissed_avail';
 function _loadDismissedAvail(){try{return JSON.parse(localStorage.getItem(_DISMISSED_AVAIL_KEY)||'{}');}catch(e){return {};}}
@@ -1180,6 +1287,25 @@ function _saveDismissedAvail(obj){try{localStorage.setItem(_DISMISSED_AVAIL_KEY,
 // (mobile/impersonation → renderMobGuardDash; desktop real guard → renderGuardDash).
 function _rerenderGuardDash(){const el=document.getElementById('content');if(!el)return;if(!isAdmin()&&(IMPERSONATE||isMobile()))renderMobGuardDash();else renderGuardDash(el);}
 function dismissAvailReminder(periodId){const d=_loadDismissedAvail();d[periodId]=true;_saveDismissedAvail(d);_rerenderGuardDash();}
+// The next work week to nudge availability for: the upcoming Saturday through
+// the following Friday (always the next Sat–Fri, rolling forward each week).
+// Returns the week's date range, the period that schedules it (so the avail
+// editor opens correctly), and a per-week dismissal key.
+function nextAvailWeek(){
+  const now=new Date(); now.setHours(12,0,0,0);
+  let add=(6-now.getDay()+7)%7; if(add===0) add=7; // coming Saturday (skip to next if today is Sat)
+  const start=new Date(now); start.setDate(start.getDate()+add);
+  const end=new Date(start); end.setDate(end.getDate()+6); // Friday
+  const startY=ymd(start), endY=ymd(end);
+  const period=D.periods.find(p=>ymd(p.start_date)<=startY&&ymd(p.schedule_thru)>=startY)||D.nextPeriod||D.activePeriod||null;
+  return {start:startY,end:endY,period:period,key:'wk-'+startY};
+}
+// Has this guard set any availability for the given week? (Looks across the
+// active + next period availability already loaded into D.)
+function _weekAvailSet(gid,wk){
+  const all=[...(D.avail||[]),...(D.availNext||[])];
+  return all.some(a=>String(a.guard_id)===gid&&ymd(a.date)>=wk.start&&ymd(a.date)<=wk.end);
+}
 let IMPERSONATE_CLOCK_STATUS={clocked_in:false,record:null}; // impersonated guard's clock state
 let D={guards:[],posts:[],templates:[],periods:[],activePeriod:null,
        shifts:[],shiftsNext:[],avail:[],pendingReqs:[],pendingSwaps:[],weeklyHours:{},
@@ -1205,7 +1331,7 @@ function tryResumeSession(token, retries) {
       } else {
         // Expired — clear everywhere then show login
         try { localStorage.removeItem('sts_token'); } catch(e) {}
-        window.parent.postMessage({ type: 'sts_clear_session' }, '*');
+        window.top.postMessage({ type: 'sts_clear_session' }, '*');
         showLogin();
       }
     })
@@ -1263,7 +1389,7 @@ window.onload = () => {
     tryResumeSession(e.data.token);
   });
 
-  window.parent.postMessage({ type: 'sts_get_session' }, '*');
+  window.top.postMessage({ type: 'sts_get_session' }, '*');
 };
 
 function hideSplash() {
@@ -1330,7 +1456,7 @@ function passwordLogin(){
         AUTH_TOKEN=r.token;
         S={authenticated:true,guard:r.guard,role:r.role,token:r.token};
         try { localStorage.setItem('sts_token', r.token); } catch(e) {}
-        window.parent.postMessage({type:'sts_save_session',token:r.token,guard:r.guard,role:r.role},'*');
+        window.top.postMessage({type:'sts_save_session',token:r.token,guard:r.guard,role:r.role},'*');
         if(r.must_change_pw){
           showForcePasswordChange();
         } else {
@@ -1461,7 +1587,7 @@ function doAcceptInvite(inviteToken) {
         AUTH_TOKEN = r.token;
         S = { authenticated: true, guard: r.guard, role: r.role, token: r.token };
         try { localStorage.setItem('sts_token', r.token); } catch(e) {}
-        window.parent.postMessage({ type: 'sts_save_session', token: r.token, guard: r.guard, role: r.role }, '*');
+        window.top.postMessage({ type: 'sts_save_session', token: r.token, guard: r.guard, role: r.role }, '*');
         try { window.history.replaceState({}, document.title, window.location.pathname); } catch(e) {}
         startApp();
       } else {
@@ -1485,7 +1611,7 @@ function logout(){
   if(AUTH_TOKEN) google.script.run.clientLogout(AUTH_TOKEN);
   AUTH_TOKEN=null;S=null;GV=false;IMPERSONATE=null;
   try { localStorage.removeItem('sts_token'); } catch(e) {}
-  window.parent.postMessage({type:'sts_clear_session'},'*');
+  window.top.postMessage({type:'sts_clear_session'},'*');
   document.getElementById('app').style.display='none';
   document.getElementById('login').style.display='flex';
   showMainLogin();
@@ -1717,8 +1843,7 @@ R.dashboard=function(){
           <div class="flex wrap gap3">
             <div><span class="muted">Period:</span> <strong>${fd(D.activePeriod.start_date)} – ${fd(D.activePeriod.end_date)}</strong></div>
             <div><span class="muted">Sched through:</span> <strong>${fd(D.activePeriod.schedule_thru)}</strong></div>
-            <div><span class="muted">Time report due:</span> <strong>${fd(D.activePeriod.time_report_due)||'—'}</strong></div>
-            <div><span class="muted">Payroll due:</span> <strong>${fd(D.activePeriod.payroll_due)||'—'}</strong></div>
+            <div><span class="muted">Payroll due:</span> <strong>${fd(D.activePeriod.time_report_due)||'—'}</strong></div>
           </div>
           <div class="flex gap2 wrap mt2">
             <button class="btn btn-wave btn-sm" onclick="go('full-schedule-admin')">📅 Schedule & Publish</button>
@@ -1727,6 +1852,7 @@ R.dashboard=function(){
           `<p class="muted">No active pay period. <a href="#" onclick="go('periods')">Create one →</a></p>`}
       </div>
       ${tideCardHtml()}
+      ${weatherCardHtml()}
       ${adminAnnouncementsCardHtml()}
       <div class="card" id="clocked-in-card">
         <div class="card-title">Currently Clocked In</div>
@@ -1777,11 +1903,10 @@ function renderGuardDash(el){
     ..._allAvailOff.map(a=>({_type:'off',date:a.date,data:a}))
   ].sort((a,b)=>a.date<b.date?-1:a.date>b.date?1:0); // stable: preserves intra-day shiftSort order
   const tasks=[];
-  const _promptPeriod = D.nextPeriod || D.activePeriod;
-  const _promptAvail = D.nextPeriod ? (D.availNext||[]) : D.avail;
+  const _wk = nextAvailWeek();
   const _dismissedAvail=_loadDismissedAvail();
-  if(_promptPeriod && !_promptAvail.some(a=>String(a.guard_id)===gid) && !_dismissedAvail[_promptPeriod.id])
-    tasks.push({icon:'🗓',text:`Submit your availability for <strong>${fd(_promptPeriod.start_date)} – ${fd(_promptPeriod.schedule_thru)}</strong>`,btn:`<button class="btn btn-wave btn-sm" onclick="availViewPeriodId='${_promptPeriod.id}';go('my-avail')">Submit</button><button class="btn btn-outline btn-sm" style="color:var(--muted);margin-left:4px" onclick="dismissAvailReminder('${_promptPeriod.id}')" title="Dismiss">✕</button>`});
+  if(_wk.period && !_weekAvailSet(gid,_wk) && !_dismissedAvail[_wk.key])
+    tasks.push({icon:'🗓',text:`Set your availability for next week <strong>${fd(_wk.start)} – ${fd(_wk.end)}</strong>`,btn:`<button class="btn btn-wave btn-sm" onclick="availViewPeriodId='${_wk.period.id}';go('my-avail')">Set Now</button><button class="btn btn-outline btn-sm" style="color:var(--muted);margin-left:4px" onclick="dismissAvailReminder('${_wk.key}')" title="Dismiss">✕</button>`});
   D.mySwaps.filter(sw=>sw.target_id===gid&&sw.status==='pending_target').forEach(sw=>{
     const from=D.guards.find(g=>g.id===sw.requestor_id), shift=D.shifts.find(s=>s.id===sw.shift_id);
     tasks.push({icon:'🔄',text:`Swap request from <strong>${from?from.name:'a guard'}</strong>${shift?' for '+fd(shift.date):''}`,btn:`<button class="btn btn-green btn-sm" onclick="go('my-avail')">View</button>`});
@@ -1818,6 +1943,7 @@ function renderGuardDash(el){
     ${todayShifts.length?`<div class="card"><div class="card-title">📍 Today</div>${shiftCards(todayShifts,true)}</div>`:''}
     ${tasks.length?`<div class="card"><div class="card-title">⚡ Action Needed</div>${tasks.map(t=>`<div class="task-row"><div style="font-size:1.1rem">${t.icon}</div><div style="flex:1;font-size:.87rem">${t.text}</div>${t.btn}</div>`).join('')}</div>`:''}
     ${tideCardHtml()}
+    ${weatherCardHtml()}
     ${recentBadgesCardHtml()}
     <div class="card">
       <div class="card-title" style="display:flex;align-items:center;justify-content:space-between">
@@ -3373,6 +3499,7 @@ R.periods=function(){
       <td>${fd(p.payroll_due)||'—'}</td>
       <td><span class="badge b-${p.locked==='true'?'denied':'open'}">${p.locked==='true'?'🔒 Locked':'Open'}</span></td>
       <td class="flex gap2">
+        <button class="btn btn-outline btn-sm" onclick="showEditPeriodModal('${p.id}')" title="Edit dates">✏️</button>
         ${p.locked!=='true'?`<button class="btn btn-outline btn-sm" onclick="doLockPeriod('${p.id}')">🔒</button>`:''}
         <button class="btn btn-wave btn-sm" onclick="viewPeriod('${p.id}')">View</button>
       </td></tr>`).join('')}</tbody></table></div>`;
@@ -4072,7 +4199,8 @@ R['my-schedule']=function(){
         </div>
       </div>` : ''}
     </div>
-    <div class="card"><div class="card-title">My Shifts (${mine.length})</div>${mine.length?shiftCards(mine):'<div class="empty"><div class="ei">🏖️</div><p>Nothing scheduled yet.</p></div>'}</div>`;
+    <div class="card"><div class="card-title">My Shifts (${mine.length})</div>${mine.length?shiftCards(mine):'<div class="empty"><div class="ei">🏖️</div><p>Nothing scheduled yet.</p></div>'}</div>
+    ${calSubscribeCardHtml()}`;
 };
 
 // ══════════════════════════════════════════
@@ -4592,9 +4720,21 @@ function doBulkCreate(){
 // ══════════════════════════════════════════
 // MODALS
 // ══════════════════════════════════════════
-function showModal(h){document.getElementById('modal').innerHTML=h;document.getElementById('overlay').classList.add('on');}
+function showModal(h){const m=document.getElementById('modal');m.style.pointerEvents='';m.innerHTML=h;document.getElementById('overlay').classList.add('on');}
 function closeModal(){document.getElementById('overlay').classList.remove('on');}
-function overlayClick(e){if(e.target===document.getElementById('overlay'))closeModal();}
+let _ovDownSelf=false;
+function overlayDown(e){_ovDownSelf=(e.target===document.getElementById('overlay'));}
+function overlayClick(e){
+  const ov=document.getElementById('overlay');
+  const down=_ovDownSelf;_ovDownSelf=false;
+  // Require the press AND release to both land on the backdrop (not a click-drag).
+  if(e.target!==ov||!down)return;
+  // Never dismiss a data-entry modal via backdrop tap: native date/time pickers
+  // can synthesize a stray backdrop press, and silently losing entry is worse than
+  // requiring an explicit Cancel. Informational modals (no fields) still tap-to-close.
+  if(ov.querySelector('#modal input, #modal select, #modal textarea'))return;
+  closeModal();
+}
 
 const RANKS=['Lifeguard Supervisor','Crew Captain','Captain','Beach Captain','Lieutenant','Vet','Guard','Rookie','Replacement','Volunteer','Cadet'];
 
@@ -4895,9 +5035,9 @@ function showAddPeriodModal(){
     const thru=new Date(nextEnd);
     while(thru.getDay()!==5)thru.setDate(thru.getDate()+1);
     suggestThru=ymd(thru);
-    // Availability deadline = 3 days before start
+    // Availability deadline = 4 days before start (Thursday before the upcoming week)
     const dl=new Date(lastEnd);
-    dl.setDate(dl.getDate()-3);
+    dl.setDate(dl.getDate()-4);
     suggestDeadline=ymd(dl);
   }
   showModal(`<div class="modal-title">💰 New Pay Period</div>
@@ -4911,7 +5051,7 @@ function showAddPeriodModal(){
     </div>
     <div class="row2">
       <div class="fg"><label>Payroll Due</label><input type="date" id="pp-p" class="inp" value="${suggestPayroll}"></div>
-      <div class="fg"><label>Availability Deadline <span class="muted" style="font-weight:400;font-size:.72rem">(auto: 3 days before start)</span></label>
+      <div class="fg"><label>Availability Deadline <span class="muted" style="font-weight:400;font-size:.72rem">(auto: 4 days before start)</span></label>
         <input type="date" id="pp-a" class="inp" value="${suggestDeadline}">
       </div>
     </div>
@@ -4922,7 +5062,7 @@ function autoCalcDeadline(){
   const start=document.getElementById('pp-s')?.value;
   if(!start)return;
   const d=new Date(start+'T12:00:00');
-  d.setDate(d.getDate()-3);
+  d.setDate(d.getDate()-4);
   const dl=document.getElementById('pp-a');
   if(dl)dl.value=ymd(d);
 }
@@ -4935,6 +5075,37 @@ function doCreatePeriod(){
     time_report_due:document.getElementById('pp-tr').value,
     payroll_due:document.getElementById('pp-p').value,
     availability_deadline:document.getElementById('pp-a').value});
+}
+function showEditPeriodModal(id){
+  const p=D.periods.find(x=>x.id===id);if(!p)return;
+  showModal(`<div class="modal-title">✏️ Edit Pay Period</div>
+    <div class="row2">
+      <div class="fg"><label>Pay Period Start</label><input type="date" id="pp-s" class="inp" value="${ymd(p.start_date)}"></div>
+      <div class="fg"><label>Pay Period End</label><input type="date" id="pp-e" class="inp" value="${ymd(p.end_date)}"></div>
+    </div>
+    <div class="row2">
+      <div class="fg"><label>Schedule Through (Fri)</label><input type="date" id="pp-t" class="inp" value="${ymd(p.schedule_thru)}"></div>
+      <div class="fg"><label>Availability Deadline</label><input type="date" id="pp-a" class="inp" value="${p.availability_deadline?ymd(p.availability_deadline):''}"></div>
+    </div>
+    <div class="row2">
+      <div class="fg"><label>Time Report Due</label><input type="date" id="pp-tr" class="inp" value="${p.time_report_due?ymd(p.time_report_due):''}"></div>
+      <div class="fg"><label>Payroll Due</label><input type="date" id="pp-p" class="inp" value="${p.payroll_due?ymd(p.payroll_due):''}"></div>
+    </div>
+    <div class="modal-foot"><button class="btn btn-outline" onclick="closeModal()">Cancel</button><button class="btn btn-navy" onclick="doUpdatePeriod('${id}')">Save</button></div>`);
+}
+function doUpdatePeriod(id){
+  const s=document.getElementById('pp-s').value,e=document.getElementById('pp-e').value,t=document.getElementById('pp-t').value;
+  if(!s||!e||!t){toast('Start, end, and schedule-through required.','err');return;}
+  const upd={id,start_date:s,end_date:e,schedule_thru:t,
+    time_report_due:document.getElementById('pp-tr').value,
+    payroll_due:document.getElementById('pp-p').value,
+    availability_deadline:document.getElementById('pp-a').value};
+  arun('clientUpdatePeriod',r=>{
+    if(r&&r.success){
+      toast('Period updated!','ok');closeModal();
+      run('clientGetPeriods',d=>{D.periods=d||[]; if(D.activePeriod&&D.activePeriod.id===id) Object.assign(D.activePeriod,upd); R.periods();});
+    } else toast(r?.message||'Update failed.','err');
+  },null,upd);
 }
 
 // ══════════════════════════════════════════
@@ -5219,15 +5390,14 @@ function renderMobGuardDash() {
 
   // Action nudges
   const tasks = [];
-  const _mPromptPeriod = D.nextPeriod || D.activePeriod;
-  const _mPromptAvail = D.nextPeriod ? (D.availNext||[]) : D.avail;
+  const _wk = nextAvailWeek();
   const _mDismissed = _loadDismissedAvail();
-  if (_mPromptPeriod && !_mPromptAvail.some(a => String(a.guard_id)===gid) && !_mDismissed[_mPromptPeriod.id]) {
+  if (_wk.period && !_weekAvailSet(gid,_wk) && !_mDismissed[_wk.key]) {
     tasks.push(`<div style="background:#fef9c3;border-radius:10px;padding:12px 14px;display:flex;align-items:center;gap:10px;margin-bottom:10px">
       <span style="font-size:1.2rem">🗓</span>
-      <div style="flex:1;font-size:.85rem">Set availability for <strong>${fd(_mPromptPeriod.start_date)} – ${fd(_mPromptPeriod.schedule_thru)}</strong></div>
-      <button class="btn btn-wave btn-sm" onclick="availViewPeriodId='${_mPromptPeriod.id}';mobGo('my-avail')">Set Now</button>
-      <button class="btn btn-outline btn-sm" style="color:var(--muted)" onclick="dismissAvailReminder('${_mPromptPeriod.id}')" title="Dismiss">✕</button>
+      <div style="flex:1;font-size:.85rem">Set your availability for next week <strong>${fd(_wk.start)} – ${fd(_wk.end)}</strong></div>
+      <button class="btn btn-wave btn-sm" onclick="availViewPeriodId='${_wk.period.id}';mobGo('my-avail')">Set Now</button>
+      <button class="btn btn-outline btn-sm" style="color:var(--muted)" onclick="dismissAvailReminder('${_wk.key}')" title="Dismiss">✕</button>
     </div>`);
   }
 
@@ -5249,6 +5419,7 @@ function renderMobGuardDash() {
       ${mobShiftCards(todayShifts)}
     </div>` : ''}
     ${tideCardHtml()}
+    ${weatherCardHtml()}
     ${recentBadgesCardHtml()}
     <div style="font-family:'Barlow Condensed',sans-serif;font-size:.82rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:7px;display:flex;align-items:center;justify-content:space-between">
       <span>My Shifts (${upcoming.length})</span>
@@ -5322,7 +5493,8 @@ function renderMobMySchedule() {
         </div>
         ${hasShift ? `<div class="g-shift-detail" id="gsd-${ds}">${detailHtml}</div>` : ''}
       </div>`;
-    }).filter(Boolean).join('')}`;
+    }).filter(Boolean).join('')}
+    ${calSubscribeCardHtml()}`;
 }
 
 function mobExpandShift(header) {
@@ -6932,7 +7104,7 @@ R['time-records'] = function() {
   const pOpts = D.periods.map(p=>`<option value="${p.id}"${p.id===focusPeriod.id?' selected':''}>${fd(p.start_date)} – ${fd(p.schedule_thru)}</option>`).join('');
 
   document.getElementById('topbar-actions').innerHTML=`
-    <button class="btn btn-outline btn-sm" onclick="exportTimeCSV()">📥 Export CSV</button>
+    <button class="btn btn-outline btn-sm" onclick="exportTimeCSV(this)">📥 Export CSV</button>
     <button class="btn btn-outline btn-sm" onclick="exportPayrollUpdateCSV(this)">📊 Payroll Update</button>
     <button class="btn btn-outline btn-sm" onclick="sendPayrollReminderTest(this)">🧪 Test to me</button>
     <button class="btn btn-outline btn-sm" onclick="sendPayrollReminderEmail(this)">📨 Payroll Reminder</button>
@@ -7245,6 +7417,7 @@ function renderAdminTimeDrill(guardId) {
             ? '<span style="font-size:.68rem;color:var(--muted)">🔒</span>'
             : `<button class="btn btn-outline btn-xs" style="font-size:.68rem;padding:2px 6px" onclick="showEditTimeRecord('${r.id}')">Edit</button>`}
           ${!isLocked?`<button class="btn btn-xs" style="font-size:.68rem;padding:2px 6px;background:var(--foam);color:var(--muted)" onclick="toggleLockRecord('${r.id}',true)">Lock</button>`:''}
+          ${!isLocked?`<button class="btn btn-xs" style="font-size:.68rem;padding:2px 6px;background:#fee2e2;color:var(--coral)" onclick="confirmDeleteTimeRecord('${r.id}','${guardId}','${e.date}')">Delete</button>`:''}
         </div>
       </div>`;
     }).join('');
@@ -7431,6 +7604,23 @@ function toggleLockRecord(id, lock) {
   }, null, id, lock);
 }
 
+function confirmDeleteTimeRecord(id, guardId, dateStr) {
+  const d = new Date(dateStr+'T12:00:00');
+  const label = `${DAYS[d.getDay()]} ${MONTHS[d.getMonth()]} ${d.getDate()}`;
+  if (!confirm(`Delete the time record for ${label}? This cannot be undone.`)) return;
+  arun('clientDeleteTimeRecord', r => {
+    if (r && r.success) {
+      toast('Record deleted.','warn');
+      arun('clientGetTimeRecords', records => {
+        _allTimeRecords = records || [];
+        renderAdminTimeDrill(guardId);
+      }, null, D.activePeriod?.id);
+    } else {
+      toast(r&&r.message?r.message:'Delete failed.','err');
+    }
+  }, null, id);
+}
+
 function lockPeriodTime() {
   if (!confirm('Lock all time records for this pay period? This cannot be undone without admin access.')) return;
   arun('clientLockPeriodTimeRecords', r => {
@@ -7438,9 +7628,13 @@ function lockPeriodTime() {
   }, null, D.activePeriod?.id);
 }
 
-function exportTimeCSV() {
+function exportTimeCSV(btn) {
   const pid = _trPeriodId || D.activePeriod?.id;
+  const origLabel = btn ? btn.innerHTML : '';
+  if (btn) { btn.disabled = true; btn.innerHTML = '<span class="spinner"></span> Exporting…'; }
+  const restore = () => { if (btn) { btn.disabled = false; btn.innerHTML = origLabel; } };
   arun('clientExportTimeRecordsCSV', r => {
+    restore();
     if (!r||!r.success) { toast('Export failed.','err'); return; }
     const blob = new Blob([r.csv], {type:'text/csv'});
     const url  = URL.createObjectURL(blob);
@@ -7565,6 +7759,7 @@ function loadBadges(cb) {
   runG('clientGetBadgeState', r => {
     _badgesLoading = false;
     BADGES = (r && r.badges) || [];
+    SLACK_ON = !!(r && r.slackConfigured);
     ((r && r.newlyEarned) || []).forEach(k => {
       const b = BADGES.find(x => x.key === k);
       if (b) toast(`🎉 New badge: ${b.emoji} ${b.name}!`, 'ok');
@@ -7625,6 +7820,48 @@ function recentBadgesCardHtml() {
 }
 function goBadges() { if (!isAdmin() && (IMPERSONATE || isMobile())) mobGo('stats'); else go('stats'); }
 
+// ── Share to crew (Slack) ─────────────────────────────────────
+// Posts a short brag line to the crew. If the admin configured a Slack webhook
+// (SLACK_ON), the server posts it straight to the channel; otherwise we open the
+// device share sheet (mobile) or copy to clipboard so the guard can paste it.
+function shareBadge(key) {
+  const b = BADGES.find(x => x.key === key);
+  if (!b || !b.earned) return;
+  shareToCrew(`${b.emoji} I just earned the ${b.name} badge on STS! 🎉`);
+}
+function shareMyRank() {
+  const me = String(myId());
+  const idx = _lbData.findIndex(g => String(g.guard_id) === me);
+  if (idx < 0) { toast('Earn a badge first to land on the leaderboard!', 'warn'); return; }
+  const g = _lbData[idx];
+  shareToCrew(`🏆 I'm #${idx + 1} on the STS badge leaderboard with ${g.count} badge${g.count !== 1 ? 's' : ''}! 🏖️`);
+}
+function shareToCrew(text) {
+  if (GV || IMPERSONATE) { toast('Switch off guard view to share.', 'warn'); return; }
+  if (SLACK_ON) {
+    toast('Sharing to the crew…', 'ok');
+    runG('clientShareToSlack', r => {
+      if (r && r.posted) toast('Shared to Slack! 🎉', 'ok');
+      else _shareFallback(text);
+    }, () => _shareFallback(text), text);
+    return;
+  }
+  _shareFallback(text);
+}
+function _shareFallback(text) {
+  if (navigator.share) {
+    navigator.share({ text }).catch(() => {}); // user may cancel — ignore
+    return;
+  }
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text).then(
+      () => toast('Copied! Paste it into Slack 📋', 'ok'),
+      () => toast(text, 'ok'));
+    return;
+  }
+  toast(text, 'ok');
+}
+
 function showBadgeInfo(key) {
   const b = BADGES.find(x => x.key === key); if (!b) return;
   const p = b.progress;
@@ -7668,6 +7905,7 @@ function showBadgeInfo(key) {
     ${status}
     </div>
     <div class="modal-foot">
+      ${b.earned && !GV && !IMPERSONATE ? `<button class="btn btn-outline" onclick="shareBadge('${b.key}')">📣 Share to crew</button>` : ''}
       <button class="btn btn-navy" onclick="closeModal()">Close</button>
     </div>`);
 }
@@ -7683,11 +7921,14 @@ function openBadgeLeaderboard() {
     <div id="lb-detail"></div>
     <div id="lb-body"><div class="muted" style="padding:24px;text-align:center">Loading…</div></div>
     <div id="lb-nav" style="display:flex;align-items:center;justify-content:space-between;margin-top:10px;gap:8px"></div>
-    <div class="modal-foot"><button class="btn btn-navy" onclick="closeModal()">Close</button></div>`);
+    <div class="modal-foot"><span id="lb-share"></span><button class="btn btn-navy" onclick="closeModal()">Close</button></div>`);
   runG('clientGuardGetBadgeLeaderboard', r => {
     _lbData = (r || []).filter(g => g.count > 0);
     _lbPage = 0;
     renderLbPage();
+    const onBoard = !GV && !IMPERSONATE && _lbData.some(g => String(g.guard_id) === String(myId()));
+    const share = document.getElementById('lb-share');
+    if (share && onBoard) share.innerHTML = `<button class="btn btn-outline" onclick="shareMyRank()">📣 Share my rank</button>`;
   }, () => {
     const b = document.getElementById('lb-body');
     if (b) b.innerHTML = '<div class="muted" style="padding:24px;text-align:center">Could not load leaderboard.</div>';
@@ -8159,6 +8400,53 @@ const STAT_ROWS = [
   {key:'vandalism',           label:'Vandalism',          color:'var(--muted)'},
 ];
 
+// Discrete "event" stats that, when reported by 2+ guards on the same beach/day,
+// are likely the SAME incident double-counted. Rare codes (fights, etc.) are the
+// strongest signal — flagged with 🚩 and sorted first. High-volume independent
+// stats (preventive actions, bather assists) are intentionally excluded.
+const STAT_EVENT_CHECKS = [
+  {key:'ten_34',            label:'10-34',             desc:'ten_34_desc',            rare:true},
+  {key:'ten_55',            label:'10-55',             desc:'ten_55_desc',            rare:true},
+  {key:'ten_24',            label:'10-24',             desc:'ten_24_desc',            rare:true},
+  {key:'patron_harassment', label:'Patron Harassment', desc:'patron_harassment_desc', rare:true},
+  {key:'vandalism',         label:'Vandalism',         desc:'vandalism_desc',         rare:true},
+  {key:'incidents',         label:'Incident',          desc:'incidents_desc',         rare:true},
+  {key:'seabob_rescues',    label:'Seabob Rescue',     desc:null,                     rare:true},
+  {key:'rfd_line_rescues',  label:'RFD + Line Rescue', desc:null,                     rare:false},
+  {key:'rfd_rescues',       label:'RFD Rescue',        desc:null,                     rare:false},
+  {key:'first_aid',         label:'First Aid',         desc:null,                     rare:false},
+];
+// Find beaches where 2+ distinct guards logged the same event type on a given day.
+function _statDupAlerts(stats){
+  const alerts=[], byBeach={};
+  (stats||[]).forEach(s=>{ const b=s.beach_location||'(no beach)'; (byBeach[b]=byBeach[b]||[]).push(s); });
+  Object.keys(byBeach).forEach(beach=>{
+    STAT_EVENT_CHECKS.forEach(chk=>{
+      const seen=new Set(), entries=[];
+      byBeach[beach].forEach(s=>{
+        if((parseInt(s[chk.key])||0)<=0) return;
+        const g=String(s.guard_id); if(seen.has(g)) return; seen.add(g);
+        entries.push({guard:s.guard_name||s.guard_id, count:parseInt(s[chk.key])||0, desc:chk.desc?(s[chk.desc]||''):''});
+      });
+      if(entries.length>=2) alerts.push({beach, label:chk.label, rare:chk.rare, entries});
+    });
+  });
+  alerts.sort((a,b)=> a.rare===b.rare?0:(a.rare?-1:1)); // rare codes first
+  return alerts;
+}
+function _statDupAlertHtml(stats){
+  const alerts=_statDupAlerts(stats);
+  if(!alerts.length) return '';
+  return `<div class="card" style="padding:14px;margin-bottom:12px;border-left:4px solid var(--coral);background:#fff7f5">
+    <div class="card-title" style="color:var(--coral)">⚠️ Possible duplicate reports — verify</div>
+    <div style="font-size:.8rem;color:var(--muted);margin-bottom:6px">Two or more guards logged the same event type on the same beach this day. These may be one incident counted more than once — confirm before relying on the totals.</div>
+    ${alerts.map(a=>`<div style="padding:8px 0;border-top:1px solid var(--border)">
+      <div style="font-weight:700;font-size:.86rem">${a.rare?'🚩 ':''}${a.label} @ ${_esc(a.beach)} <span style="font-weight:400;color:var(--muted)">· ${a.entries.length} guards</span></div>
+      ${a.entries.map(e=>`<div style="font-size:.8rem;color:var(--muted);padding-left:14px">• ${_esc(e.guard)} (${e.count})${e.desc?` — “${_esc(e.desc)}”`:''}</div>`).join('')}
+    </div>`).join('')}
+  </div>`;
+}
+
 let _adminStatsDate = null;
 let _adminStatsData = null;
 let _guardTotalsSort = { key: null, dir: -1 };
@@ -8435,7 +8723,7 @@ function renderAdminStatsPage() {
       </div>
     </div>`;
 
-  el.innerHTML = todaySection + gridSection + listSection + seasonSection;
+  el.innerHTML = todaySection + _statDupAlertHtml(d.statsForDate||[]) + gridSection + listSection + seasonSection;
   renderGuardTotalsBody();
 }
 

@@ -35,6 +35,9 @@ function doGet(e) {
       .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL)
       .addMetaTag('viewport', 'width=device-width, initial-scale=1');
   }
+  if (e && e.parameter && e.parameter.cal === '1') {
+    return serveGuardCalendar_(e.parameter.g, e.parameter.t);
+  }
   const tmpl = HtmlService.createTemplateFromFile('index');
   tmpl.inviteToken = (e && e.parameter && e.parameter.invite) ? String(e.parameter.invite) : '';
   tmpl.sessionToken = (e && e.parameter && e.parameter.st) ? String(e.parameter.st) : '';
@@ -95,6 +98,131 @@ function getBoardData(dateStr) {
 
 function clientGetBoardUrl(token) {
   return ScriptApp.getService().getUrl() + '?board=1';
+}
+
+// ── GUARD CALENDAR FEED (iCal subscription) ──────────────────
+// A guard subscribes to a personal, read-only .ics URL that their phone
+// (Apple/Google Calendar) polls periodically, so assigned shifts appear
+// and stay current. The URL carries the guard id plus an HMAC token
+// derived from a server secret — stateless (no per-guard storage) and
+// unguessable. Served by doGet (?cal=1&g=<id>&t=<token>); no login, so
+// calendar apps that can't authenticate can still fetch it.
+function calSecret_() {
+  const props = PropertiesService.getScriptProperties();
+  let s = props.getProperty('CAL_SECRET');
+  if (!s) { s = Utilities.getUuid() + Utilities.getUuid(); props.setProperty('CAL_SECRET', s); }
+  return s;
+}
+function calToken_(guardId) {
+  const sig = Utilities.computeHmacSha256Signature(String(guardId), calSecret_());
+  return Utilities.base64EncodeWebSafe(sig).replace(/=+$/, '');
+}
+// Guard-authenticated: returns the personal feed URL for the logged-in guard.
+function clientGetMyCalUrl(token) {
+  const session = getSessionFromToken(token);
+  if (!session) return { success: false, message: 'Not authenticated. Please log in again.' };
+  const gid = String(session.guard.id);
+  const url = ScriptApp.getService().getUrl() + '?cal=1&g=' + encodeURIComponent(gid) + '&t=' + calToken_(gid);
+  return { success: true, url: url, webcal: url.replace(/^https?:\/\//, 'webcal://') };
+}
+function serveGuardCalendar_(guardId, token) {
+  if (!guardId || !token || token !== calToken_(guardId)) {
+    return ContentService.createTextOutput('Invalid or expired calendar link.')
+      .setMimeType(ContentService.MimeType.TEXT);
+  }
+  const guard = sheetToObjects(SHEETS.GUARDS).find(g => String(g.id) === String(guardId));
+  if (!guard) {
+    return ContentService.createTextOutput('Calendar not found.').setMimeType(ContentService.MimeType.TEXT);
+  }
+  return ContentService.createTextOutput(buildGuardIcs_(guard))
+    .setMimeType(ContentService.MimeType.ICAL);
+}
+const VTIMEZONE_NY_ = [
+  'BEGIN:VTIMEZONE', 'TZID:America/New_York',
+  'BEGIN:DAYLIGHT', 'TZOFFSETFROM:-0500', 'TZOFFSETTO:-0400', 'TZNAME:EDT',
+  'DTSTART:19700308T020000', 'RRULE:FREQ=YEARLY;BYMONTH=3;BYDAY=2SU', 'END:DAYLIGHT',
+  'BEGIN:STANDARD', 'TZOFFSETFROM:-0400', 'TZOFFSETTO:-0500', 'TZNAME:EST',
+  'DTSTART:19701101T020000', 'RRULE:FREQ=YEARLY;BYMONTH=11;BYDAY=1SU', 'END:STANDARD',
+  'END:VTIMEZONE'
+];
+function icsDT_(ymdStr, minutes) {
+  const h = Math.floor(minutes / 60), m = minutes % 60, p2 = n => (n < 10 ? '0' : '') + n;
+  return ymdStr.replace(/-/g, '') + 'T' + p2(h) + p2(m) + '00';
+}
+function icsEsc_(s) {
+  return String(s == null ? '' : s)
+    .replace(/\\/g, '\\\\').replace(/;/g, '\\;').replace(/,/g, '\\,').replace(/\r?\n/g, '\\n');
+}
+// UTF-8 byte length of a BMP string (shift text has no emoji/surrogates).
+function icsByteLen_(s) {
+  let n = 0;
+  for (let i = 0; i < s.length; i++) { const c = s.charCodeAt(i); n += c < 0x80 ? 1 : c < 0x800 ? 2 : 3; }
+  return n;
+}
+// Fold a content line to <=75 octets per RFC 5545 (continuation lines begin
+// with a single space). Never splits a multi-byte char.
+function icsFold_(line) {
+  if (icsByteLen_(line) <= 75) return line;
+  const parts = [];
+  let cur = '', bytes = 0;
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i], cb = icsByteLen_(ch);
+    if (bytes + cb > 75) { parts.push(cur); cur = ' ' + ch; bytes = 1 + cb; }
+    else { cur += ch; bytes += cb; }
+  }
+  parts.push(cur);
+  return parts.join('\r\n');
+}
+function buildGuardIcs_(guard) {
+  const gid = String(guard.id);
+  // Include a little recent history so the calendar shows context, plus all future shifts.
+  const from = new Date(); from.setDate(from.getDate() - 14);
+  const fromYmd = toYMD(from);
+  const tmplByCode = {}; getAllTemplates().forEach(t => tmplByCode[t.code] = t);
+  const postById = {}; getAllPosts().forEach(p => postById[p.id] = p);
+  const shifts = sheetToObjects(SHEETS.SHIFTS)
+    .filter(s => String(s.assigned_guard_id) === gid && s.status !== 'cancelled' && toYMD(s.date) >= fromYmd)
+    .sort((a, b) => (toYMD(a.date) < toYMD(b.date) ? -1 : 1));
+
+  const lines = [
+    'BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//7 Presidents STS//Shifts//EN',
+    'CALSCALE:GREGORIAN', 'METHOD:PUBLISH',
+    'X-WR-CALNAME:7P Lifeguard Shifts', 'X-WR-TIMEZONE:America/New_York',
+    'REFRESH-INTERVAL;VALUE=DURATION:PT6H', 'X-PUBLISHED-TTL:PT6H'
+  ].concat(VTIMEZONE_NY_);
+
+  const stamp = Utilities.formatDate(new Date(), 'UTC', "yyyyMMdd'T'HHmmss'Z'");
+  shifts.forEach(s => {
+    const ds = toYMD(s.date);
+    const p = postById[s.post_id];
+    const t = tmplByCode[s.template_code];
+    let startMin = null, endMin = null;
+    if (s.template_code === 'SPEC' && (s.custom_start || s.custom_end)) {
+      startMin = timeToMinutes_(s.custom_start); endMin = timeToMinutes_(s.custom_end);
+    } else if (t) {
+      startMin = timeToMinutes_(t.start_time); endMin = timeToMinutes_(t.end_time);
+    }
+    const title = (p ? p.name : 'Lifeguard') + ' — ' + (t ? t.name : (s.template_code || 'Shift'));
+    lines.push('BEGIN:VEVENT');
+    lines.push('UID:' + s.id + '@7p-sts');
+    lines.push('DTSTAMP:' + stamp);
+    if (startMin != null && endMin != null) {
+      lines.push('DTSTART;TZID=America/New_York:' + icsDT_(ds, startMin));
+      lines.push('DTEND;TZID=America/New_York:' + icsDT_(ds, endMin));
+    } else {
+      lines.push('DTSTART;VALUE=DATE:' + ds.replace(/-/g, ''));  // time TBD → all-day
+    }
+    lines.push('SUMMARY:' + icsEsc_(title));
+    lines.push('LOCATION:' + icsEsc_((p ? p.name + ', ' : '') + 'Long Branch, NJ'));
+    const timeStr = shiftTimeStr_(s, tmplByCode);
+    const desc = [];
+    if (t) desc.push(t.name + (timeStr ? ' (' + timeStr + ')' : ''));
+    if (s.notes) desc.push(String(s.notes));
+    if (desc.length) lines.push('DESCRIPTION:' + icsEsc_(desc.join(' — ')));
+    lines.push('END:VEVENT');
+  });
+  lines.push('END:VCALENDAR');
+  return lines.map(icsFold_).join('\r\n');
 }
 
 // ── AUTH ─────────────────────────────────────────────────────
@@ -188,6 +316,15 @@ function addTournamentTemplate() {
   if (data.some(row => row[0] === 'TOURN')) { Logger.log('TOURN already exists.'); return; }
   tmpl.appendRow(['TOURN', 'Tournament', '6:00 PM', '8:30 PM', 2.5, 0]);
   Logger.log('Tournament template added.');
+}
+
+function addCadetTemplate() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const tmpl = ss.getSheetByName('ShiftTemplates');
+  const data = tmpl.getDataRange().getValues();
+  if (data.some(row => row[0] === 'CADET')) { Logger.log('CADET already exists.'); return; }
+  tmpl.appendRow(['CADET', 'Cadet', '8:45 AM', '2:15 PM', 5.5, 0]);
+  Logger.log('Cadet template added.');
 }
 
 function installTriggers() {
@@ -1299,6 +1436,82 @@ function deleteAnnouncement(id) {
   return { success: true };
 }
 
+// ── WEATHER (Long Branch, NJ) ────────────────────────────────
+// Live conditions for the guard/admin dashboards via Open-Meteo
+// (free, no API key). Air temp + today's hi/lo + condition from the
+// forecast API; water temp from the marine API (sea-surface temp).
+// Results are cached for 1 hour to keep dashboard loads instant and
+// stay well within UrlFetch quotas. No token required — public data.
+const WX_LAT_ = 40.296, WX_LON_ = 73.982 * -1;  // Long Branch beach
+function getWeather() {
+  const cache = CacheService.getScriptCache();
+  const hit = cache.get('weather_lb_v2');
+  if (hit) { try { return JSON.parse(hit); } catch (e) {} }
+
+  const today    = { current_temp: null, hi: null, lo: null, condition: '', icon: '🌤️', water_temp: null };
+  const tomorrow = { current_temp: null, hi: null, lo: null, condition: '', icon: '🌤️', water_temp: null };
+  try {
+    const fUrl = 'https://api.open-meteo.com/v1/forecast?latitude=' + WX_LAT_ + '&longitude=' + WX_LON_ +
+      '&current=temperature_2m,weather_code&daily=weather_code,temperature_2m_max,temperature_2m_min' +
+      '&temperature_unit=fahrenheit&timezone=America/New_York&forecast_days=2';
+    const f = JSON.parse(UrlFetchApp.fetch(fUrl, { muteHttpExceptions: true }).getContentText());
+    if (f.daily) {
+      const d = f.daily;
+      today.hi = Math.round(d.temperature_2m_max[0]); today.lo = Math.round(d.temperature_2m_min[0]);
+      const w0 = wmoLabel_(d.weather_code[0]); today.condition = w0.label; today.icon = w0.icon;
+      if (d.time.length > 1) {
+        tomorrow.hi = Math.round(d.temperature_2m_max[1]); tomorrow.lo = Math.round(d.temperature_2m_min[1]);
+        const w1 = wmoLabel_(d.weather_code[1]); tomorrow.condition = w1.label; tomorrow.icon = w1.icon;
+      }
+    }
+    if (f.current) {
+      today.current_temp = Math.round(f.current.temperature_2m);
+      // Prefer the live "now" condition over the daily summary for today.
+      if (f.current.weather_code != null) {
+        const wn = wmoLabel_(f.current.weather_code); today.condition = wn.label; today.icon = wn.icon;
+      }
+    }
+  } catch (e) { Logger.log('getWeather forecast error: ' + e.message); }
+
+  try {
+    // Marine API returns °C; convert each day's mean (max+min)/2 to °F ourselves.
+    const mUrl = 'https://marine-api.open-meteo.com/v1/marine?latitude=' + WX_LAT_ + '&longitude=' + WX_LON_ +
+      '&daily=sea_surface_temperature_max,sea_surface_temperature_min&timezone=America/New_York&forecast_days=2';
+    const m = JSON.parse(UrlFetchApp.fetch(mUrl, { muteHttpExceptions: true }).getContentText());
+    const md = m.daily;
+    if (md && md.sea_surface_temperature_max) {
+      const meanF = i => {
+        const hi = md.sea_surface_temperature_max[i], lo = md.sea_surface_temperature_min[i];
+        if (hi == null || lo == null) return null;
+        return Math.round(((hi + lo) / 2) * 9 / 5 + 32);
+      };
+      today.water_temp = meanF(0);
+      if (md.time.length > 1) tomorrow.water_temp = meanF(1);
+    }
+  } catch (e) { Logger.log('getWeather marine error: ' + e.message); }
+
+  const out = { today, tomorrow };
+  // Cache only if we got at least the air temp; otherwise let it retry sooner.
+  if (today.current_temp != null) cache.put('weather_lb_v2', JSON.stringify(out), 3600);
+  return out;
+}
+// WMO weather code → friendly label + emoji (Open-Meteo `weather_code`).
+function wmoLabel_(code) {
+  const m = {
+    0:['Clear','☀️'], 1:['Mostly clear','🌤️'], 2:['Partly cloudy','⛅'], 3:['Overcast','☁️'],
+    45:['Fog','🌫️'], 48:['Fog','🌫️'],
+    51:['Light drizzle','🌦️'], 53:['Drizzle','🌦️'], 55:['Drizzle','🌦️'],
+    56:['Freezing drizzle','🌧️'], 57:['Freezing drizzle','🌧️'],
+    61:['Light rain','🌦️'], 63:['Rain','🌧️'], 65:['Heavy rain','🌧️'],
+    66:['Freezing rain','🌧️'], 67:['Freezing rain','🌧️'],
+    71:['Light snow','🌨️'], 73:['Snow','🌨️'], 75:['Heavy snow','❄️'], 77:['Snow grains','🌨️'],
+    80:['Showers','🌦️'], 81:['Showers','🌧️'], 82:['Heavy showers','⛈️'],
+    85:['Snow showers','🌨️'], 86:['Snow showers','🌨️'],
+    95:['Thunderstorm','⛈️'], 96:['Thunderstorm','⛈️'], 99:['Thunderstorm','⛈️']
+  };
+  return m[code] ? { label: m[code][0], icon: m[code][1] } : { label: '', icon: '🌤️' };
+}
+
 // ── NOTIFICATIONS ────────────────────────────────────────────
 
 function notify(guardId, type, message) {
@@ -1880,7 +2093,7 @@ const BADGE_DEFS = [
     desc:'20 shifts in a row with stats submitted',
     earned: c => c.statsStreak >= 20,
     progress: c => ({ current: Math.min(c.statsStreak, 20), target: 20 }) },
-  { key:'stats_streak_50', name:'Statistician', emoji:'🏆', category:'Diligence',
+  { key:'stats_streak_50', name:'Thorough and Efficient (Spike Fowler)', emoji:'🏆', category:'Diligence',
     desc:'50 shifts in a row with stats submitted',
     earned: c => c.statsStreak >= 50,
     progress: c => ({ current: Math.min(c.statsStreak, 50), target: 50 }) },
@@ -2024,17 +2237,19 @@ const BADGE_DEFS = [
     desc:'Reported drugs/alcohol (10-24) 10 times',
     earned: c => c.totalTen24 >= 10,
     progress: c => ({ current: Math.min(c.totalTen24, 10), target: 10 }) },
-  // Leveling badge — reports of patrons harassing lifeguards (Bronze 1 → Silver 3 → Gold 5).
+  // Leveling badge — reports of patrons harassing lifeguards (Bronze 1 → Silver 3 → Gold 5 → Deb's Demons 10).
+  // The final tier carries a `name` override so it displays as its own award rather than "Sticks and Stones — …".
   { key:'sticks_and_stones', name:'Sticks and Stones', emoji:'🪨', category:'Rescues',
     desc:'Reported patrons harassing lifeguards',
     metric: c => c.totalPatronHarassment,
     tiers: [
-      { n:1, label:'Bronze', emoji:'🥉' },
-      { n:3, label:'Silver', emoji:'🥈' },
-      { n:5, label:'Gold',   emoji:'🥇' }
+      { n:1,  label:'Bronze', emoji:'🥉' },
+      { n:3,  label:'Silver', emoji:'🥈' },
+      { n:5,  label:'Gold',   emoji:'🥇' },
+      { n:10, label:'Platinum', emoji:'💎', name:"Deb's Demons" }
     ],
     earned: c => c.totalPatronHarassment >= 1,
-    progress: c => ({ current: Math.min(c.totalPatronHarassment, 5), target: 5 }) },
+    progress: c => ({ current: Math.min(c.totalPatronHarassment, 10), target: 10 }) },
   { key:'the_picasso', name:'The Picasso', emoji:'🎨', category:'Rescues',
     desc:'Reported vandalism 3 times',
     earned: c => c.totalVandalism >= 3,
@@ -2386,7 +2601,29 @@ function getBadgeState(token) {
     };
   });
 
-  return { badges, newlyEarned };
+  // slackConfigured tells the client whether a one-tap "Share to crew" post is
+  // possible; if false the client falls back to the device share sheet/clipboard.
+  return { badges, newlyEarned, slackConfigured: !!getConfig('slack_webhook_url') };
+}
+
+// Post a short "I just earned …" / "I'm #N on the leaderboard" line to the crew
+// Slack channel via an Incoming Webhook URL stored in Config (key
+// 'slack_webhook_url'). Returns { posted:true } when sent, or { posted:false }
+// when no webhook is configured so the client can fall back to the share sheet.
+function clientShareToSlack(token, text) {
+  const session = getSessionFromToken(token);
+  if (!session) return { posted: false, error: 'auth' };
+  const url = getConfig('slack_webhook_url');
+  if (!url) return { posted: false };
+  const msg = String(text || '').slice(0, 300);
+  if (!msg) return { posted: false };
+  const resp = UrlFetchApp.fetch(url, {
+    method: 'post',
+    contentType: 'application/json',
+    payload: JSON.stringify({ text: msg }),
+    muteHttpExceptions: true
+  });
+  return { posted: resp.getResponseCode() === 200 };
 }
 
 // Display state for a leveling (tiered) badge. Renders the highest medal tier
@@ -2419,7 +2656,7 @@ function tieredBadgeState_(def, ctx, data, guardId, ownedRows, newlyEarned) {
 
   return {
     key: def.key,
-    name: cur ? `${def.name} — ${cur.label}` : def.name,
+    name: cur ? (cur.name || `${def.name} — ${cur.label}`) : def.name,
     emoji: cur ? cur.emoji : def.emoji,
     desc: def.desc, category: def.category,
     earned: earned, earned_at: earnedAt,
@@ -2501,7 +2738,7 @@ function badgeDisplay_(def, ctx) {
   if (def.tiers) {
     const val = def.metric(ctx);
     const cur = def.tiers[def.tiers.filter(t => val >= t.n).length - 1] || def.tiers[0];
-    return { key: def.key, name: `${def.name} — ${cur.label}`, emoji: cur.emoji, desc: def.desc };
+    return { key: def.key, name: cur.name || `${def.name} — ${cur.label}`, emoji: cur.emoji, desc: def.desc };
   }
   return { key: def.key, name: def.name, emoji: def.emoji, desc: def.desc };
 }
@@ -2818,6 +3055,7 @@ function clientDeleteLocation(token, id)   { requireAdmin(token); return deleteL
 function clientGetAnnouncements()              { return getAnnouncements(); }
 function clientAddAnnouncement(token, message) { const s = requireAdmin(token); const g = findGuardById(s.guardId); return addAnnouncement(message, g ? g.name : 'Admin'); }
 function clientDeleteAnnouncement(token, id)   { requireAdmin(token); return deleteAnnouncement(id); }
+function clientGetWeather()                     { return getWeather(); }
 
 // Clock in
 function clockIn(d) {
@@ -3302,6 +3540,21 @@ function clientGuardDeleteTimeRecord(token, recordId) {
   return { success: false, message: 'Record not found.' };
 }
 function clientEditTimeRecord(token,d)             { requireAdmin(token); return editTimeRecord(d); }
+function clientDeleteTimeRecord(token, recordId) {
+  requireAdmin(token);
+  const sheet = SH(SHEETS.TIME_RECORDS);
+  if (!sheet) return { success: false, message: 'Sheet not found.' };
+  const data = sheet.getDataRange().getValues();
+  const headers = data[0].map(h => String(h).trim());
+  const idCol = headers.indexOf('id');
+  for (let i = 1; i < data.length; i++) {
+    if (String(data[i][idCol]) === String(recordId)) {
+      sheet.deleteRow(i + 1);
+      return { success: true };
+    }
+  }
+  return { success: false, message: 'Record not found.' };
+}
 function clientAddManualTimeRecord(token,d) {
   // Admin creates a time record from scratch for any guard on any date
   const session = requireAdmin(token);
