@@ -1,0 +1,11 @@
+# Scratch / reference material — not part of the app
+*.pdf
+*.jpg
+IMG_*.png
+full-schedule-shrunk.png
+
+# OS cruft
+.DS_Store
+
+# Note: PWA icons (icon-192.png, icon-512.png) are already tracked and
+# intentionally kept — .gitignore does not affect already-tracked files.

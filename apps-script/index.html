@@ -509,6 +509,10 @@ body{font-family:'Barlow',sans-serif;background:var(--foam);color:var(--text);mi
 .bg-cell.bg-marked{background:var(--wave);color:#fff;border-color:var(--wave);font-weight:600;}
 .bg-cell.bg-free{background:var(--foam);border-color:var(--sky);cursor:default;font-size:.9rem;}
 .bg-cell.bg-free.bg-marked{background:var(--sky);border-color:var(--sky);}
+/* ── Cache Hunt card (GPS treasure hunt easter egg) ── */
+.cache-card{cursor:pointer;color:#fff;border:none;background:linear-gradient(135deg,#0e7490,#0369a1);box-shadow:0 4px 14px rgba(3,105,161,.28);transition:transform .12s,box-shadow .12s;}
+.cache-card:hover{transform:translateY(-1px);box-shadow:0 6px 18px rgba(3,105,161,.36);}
+.cache-card.cache-found{background:linear-gradient(135deg,#b45309,#d97706);box-shadow:0 4px 14px rgba(217,119,6,.3);}
 /* ── Achievement badges ── */
 #badge-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(96px,1fr));gap:10px;}
 .badge{border:1.5px solid var(--border);border-radius:12px;padding:12px 8px;text-align:center;background:linear-gradient(135deg,var(--foam),#fff);transition:transform .12s,box-shadow .12s;cursor:pointer;}
@@ -519,6 +523,9 @@ body{font-family:'Barlow',sans-serif;background:var(--foam);color:var(--text);mi
 .badge.locked .badge-emoji{filter:grayscale(1);opacity:.4;}
 .badge.locked .badge-name{color:var(--muted);}
 .badge-emoji{font-size:2rem;line-height:1;margin-bottom:6px;}
+/* Tier-tinted disc: shows a badge's own glyph on a bronze/silver/gold/platinum
+   background instead of a medal emoji (Sharpshooter 🎯, Sure Shot 🏹). */
+.badge-disc{display:inline-flex;align-items:center;justify-content:center;border-radius:50%;line-height:1;vertical-align:middle;box-shadow:inset 0 2px 4px rgba(255,255,255,.5),inset 0 -2px 5px rgba(0,0,0,.2),0 1px 3px rgba(0,0,0,.28);}
 .badge-name{font-weight:700;font-size:.8rem;line-height:1.15;}
 .badge-sub{font-size:.68rem;color:var(--muted);margin-top:3px;}
 .badge-bar{height:8px;border-radius:6px;background:var(--border);overflow:hidden;}
@@ -619,7 +626,7 @@ body{font-family:'Barlow',sans-serif;background:var(--foam);color:var(--text);mi
 <div id="sp-flash"><span id="sp-flash-num"></span></div>
 
 <!-- ── EASTER EGG: Seven Presidents modal ── -->
-<div id="seven-pres-backdrop" onclick="spBackdropClick(event)">
+<div id="seven-pres-backdrop">
   <div id="seven-pres-modal" role="dialog" aria-modal="true" aria-label="The Seven Presidents">
     <div class="sp-header">
       <button class="sp-close" onclick="spClose()" aria-label="Close">✕</button>
@@ -1116,40 +1123,84 @@ const AV_SHORT = {
 };
 // Templates shown in assign/edit shift dropdowns
 const ASSIGN_TMPL_CODES = ['8HR','LS8','LS','SPEC','TOURN','CADET'];
-// Which statuses include late shift availability
-const AV_LATE = new Set(['S_LS8','S_LS','S_8HR_LS']);
-// Which statuses mean guard is available at all
-const AV_AVAIL = new Set(['S_8HR','S_LS8','S_LS','S_8HR_LS','S_SPEC','S_CADET','S_8HR_OT']);
-// Regular-shift statuses that count toward the 40-hour availability limit (S_SPEC excluded — custom hours TBD)
-const AV_REGULAR = new Set(['S_8HR','S_8HR_OT']);
+// Templates the admin can assign to shifts: the standard set plus any event template
+// flagged to be offered in availability (so Mega/Tourney shifts are schedulable).
+function assignableTemplates(){
+  return (D.templates||[]).filter(x=>ASSIGN_TMPL_CODES.includes(x.code)||x.offer_in_availability);
+}
+// Which statuses include late shift availability (legacy combos retained for old-row display)
+const AV_LATE = new Set(['S_LS']);
+// Which statuses mean guard is available at all (use avIsWorking() for dynamic-aware checks)
+const AV_AVAIL = new Set(['S_8HR','S_LS','S_SPEC','S_CADET']);
+// Regular-shift statuses that count a fixed 8h toward the 40-hour availability limit
+const AV_REGULAR = new Set(['S_8HR']);
 // Senior ranks required for late shifts
 const LATE_SENIOR = ['Lifeguard Supervisor','Crew Captain','Captain','Beach Captain','Lieutenant'];
 
-// Build {date: status} map for a period, merging saved + pending changes.
-// Excludes S_LS companion rows (late-only, never count as regular hours).
-function getEffectiveAvailMap(viewPeriod, changesObj) {
-  const map = {};
+// ── Availability status helpers ──────────────────────────────
+// Base statuses are the fixed enum above. A per-event option is encoded
+// "S_T_<TEMPLATE_CODE>" (e.g. S_T_TOURN, S_T_MEGA4) so the picker can offer
+// flagged templates without a schema change. The helpers below resolve either.
+function avIsDynamic(st){ return typeof st==='string' && st.indexOf('S_T_')===0; }
+function avTmplCode(st){ return avIsDynamic(st) ? st.slice(4) : null; }
+function avTmpl(st){ const c=avTmplCode(st); return c ? D.templates.find(t=>t.code===c) : null; }
+const _AV_DYN_PALETTE=['#7c3aed','#0891b2','#db2777','#ea580c','#16a34a','#2563eb','#9333ea','#0d9488'];
+function _avDynColor(code){ let h=0; for(let i=0;i<String(code).length;i++) h=(h*31+String(code).charCodeAt(i))>>>0; return _AV_DYN_PALETTE[h % _AV_DYN_PALETTE.length]; }
+function avColor(st){ if(avIsDynamic(st)) return _avDynColor(avTmplCode(st)); return AV_COLORS[st]||'#64748b'; }
+function avLabel(st){ if(avIsDynamic(st)){ const t=avTmpl(st); return t?t.name:avTmplCode(st); } return AV_LABELS[st]||st; }
+function avShort(st){ if(avIsDynamic(st)) return avTmplCode(st); return AV_SHORT[st]||st; }
+function avChipStyle(st){ const c=avColor(st); return `background:${c}22;color:${c}`; }
+function avIsOff(st){ return st==='FIXED_OFF'||st==='FLEX_OFF'; }
+function avIsWorking(st){ return st==='S_8HR'||st==='S_LS'||st==='S_CADET'||st==='S_SPEC'||avIsDynamic(st); }
+function avIsLate(st){ if(st==='S_LS') return true; if(avIsDynamic(st)){ const t=avTmpl(st); const em=t?timeToMin(t.end_time):null; return em!=null && em>=19*60+15; } return AV_LATE.has(st); }
+// Ordered base options always shown in the availability picker.
+const AV_BASE_OPTIONS=['S_8HR','S_LS','S_CADET','S_SPEC','FLEX_OFF','FIXED_OFF'];
+// Expand a stored status into the multi-select set (back-compat for retired combos).
+function avExpand(st){
+  if(st==='S_8HR_LS') return ['S_8HR','S_LS'];
+  if(st==='S_LS8')    return ['S_LS'];
+  if(st==='S_8HR_OT') return ['S_8HR'];
+  return [st];
+}
+// A guard's effective status set for a date, from a saved availability array (admin views).
+function guardDayStatuses(gid, ds, availArr){
+  const out=[];
+  (availArr||D.avail||[]).filter(a=>String(a.guard_id)===String(gid)&&a.date===ds)
+    .forEach(r=>avExpand(r.status).forEach(st=>{ if(st&&out.indexOf(st)<0) out.push(st); }));
+  return out;
+}
+
+// Build {date: [statuses]} sets for a period, merging saved rows + pending changes.
+// Each day is a SET of statuses (multi-select). Pending arrays override saved rows
+// (an empty pending array means the day was cleared). Legacy combos are expanded.
+function getEffectiveAvailSets(viewPeriod, changesObj) {
+  const sets = {};
   const viewArr = getAvailView();
   const gid = String(myId());
+  const _add = (arr, st) => { if (st && arr.indexOf(st) < 0) arr.push(st); };
   dateRange(viewPeriod.start_date, viewPeriod.schedule_thru).forEach(d => {
     const ds = ymd(d);
-    const saved = viewArr.find(a => String(a.guard_id) === gid && a.date === ds && a.status !== 'S_LS');
-    if (saved) map[ds] = saved.status;
+    const rows = viewArr.filter(a => String(a.guard_id) === gid && a.date === ds);
+    if (rows.length) { const s = []; rows.forEach(r => avExpand(r.status).forEach(st => _add(s, st))); sets[ds] = s; }
   });
-  Object.entries(changesObj || {}).forEach(([k, v]) => {
-    if (k.endsWith('_lso')) return;
-    const entry = Array.isArray(v) ? v[0] : v;
-    if (entry) map[k] = entry.status;
+  Object.entries(changesObj || {}).forEach(([ds, arr]) => {
+    const list = Array.isArray(arr) ? arr : [arr];
+    const s = []; list.forEach(e => { if (e && e.status) avExpand(e.status).forEach(st => _add(s, st)); });
+    sets[ds] = s; // pending overrides saved, even when empty (cleared day)
   });
-  return map;
+  return sets;
 }
-// Returns {weekStartDate: hours} grouped by Sat-Fri work week
-function countRegularHrs(statusMap) {
+// Returns {weekStartDate: hours} grouped by Sat-Fri work week.
+// S_8HR = 8h; a dynamic event status contributes its template's paid_hours.
+function countRegularHrs(setMap) {
   const weeks = {};
-  Object.entries(statusMap).forEach(([ds, s]) => {
-    if (!AV_REGULAR.has(s)) return;
-    const wk = weekKey(ds);
-    weeks[wk] = (weeks[wk] || 0) + 8;
+  Object.entries(setMap).forEach(([ds, arr]) => {
+    let hrs = 0;
+    arr.forEach(s => {
+      if (s === 'S_8HR') hrs += 8;
+      else if (avIsDynamic(s)) { const t = avTmpl(s); hrs += t ? parseFloat(t.paid_hours) || 0 : 0; }
+    });
+    if (hrs > 0) { const wk = weekKey(ds); weeks[wk] = (weeks[wk] || 0) + hrs; }
   });
   return weeks;
 }
@@ -1158,17 +1209,17 @@ function weekKey(ds){
   const sat=new Date(d);sat.setDate(d.getDate()+diff);return ymd(sat);
 }
 // Returns {weekStartDate: count} of days with any working status per Sat-Fri week
-function countWorkingDaysPerWeek(statusMap) {
+function countWorkingDaysPerWeek(setMap) {
   const weeks = {};
-  Object.entries(statusMap).forEach(([ds, s]) => {
-    if (!AV_AVAIL.has(s)) return;
+  Object.entries(setMap).forEach(([ds, arr]) => {
+    if (!arr.some(s => avIsWorking(s))) return;
     const wk = weekKey(ds);
     weeks[wk] = (weeks[wk] || 0) + 1;
   });
   return weeks;
 }
-function countOffDays(statusMap) {
-  return Object.values(statusMap).filter(s => s === 'FIXED_OFF' || s === 'FLEX_OFF').length;
+function countOffDays(setMap) {
+  return Object.values(setMap).filter(arr => arr.some(s => avIsOff(s))).length;
 }
 
 function fmtTime(val){
@@ -1278,6 +1329,7 @@ let mobAvailChanges={};
 let CLOCK_STATUS={clocked_in:false,record:null};
 let PENDING_STATS=[]; // time records needing stats forms
 let BADGES=[]; // earned + locked achievement badges for the logged-in guard
+let CACHEHUNT=null; // Cache Hunt status for the logged-in guard (null until loaded / inactive)
 let SLACK_ON=false; // true when admin configured a Slack webhook (enables auto-post)
 let SNOOZED_STATS={}; // {time_record_id: snooze_until_date} // current clock-in state
 const _DISMISSED_AVAIL_KEY='sts_dismissed_avail';
@@ -1672,11 +1724,21 @@ function loadPeriodData(cb) {
 
   setTimeout(() => { if (!done) { console.warn('SHORE loadPeriodData timeout, proceeding'); done = true; if (cb) cb(); } }, 10000);
 
-  run('clientGetShifts',       r => { D.shifts = r||[]; tick('shifts');       }, () => tick('shifts-fail'),       pid);
+  if (isTrueAdmin()) {   // admins see drafts (unpublished weeks); guards/public see published only
+    arun('clientGetShiftsAdmin', r => { D.shifts = r||[]; tick('shifts'); }, () => tick('shifts-fail'), pid);
+  } else {
+    run('clientGetShifts',     r => { D.shifts = r||[]; tick('shifts');     }, () => tick('shifts-fail'),       pid);
+  }
   run('clientGetAvailability', r => { D.avail  = r||[]; tick('avail');        }, () => tick('avail-fail'),        pid);
   if (isTrueAdmin()) {
     run('clientGetWeeklySummary', r => { D.weeklyHours = r||{}; tick('hours'); }, () => tick('hours-fail'), pid);
+    loadWeekStates(pid);
   }
+}
+// Admin-only: load each week's draft/published state for the Full Schedule publish bar.
+function loadWeekStates(pid){
+  if(!isTrueAdmin())return;
+  arun('clientGetWeekStates',r=>{D.weekStates=r||{};if(PANEL==='full-schedule-admin')R['full-schedule-admin']();},null,pid);
 }
 function bgLoad(){
   run('clientGetAnnouncements',r=>{ D.announcements=r||[]; if(PANEL==='dashboard'){ if(isAdmin())R.dashboard(); else _rerenderGuardDash(); } });
@@ -1685,7 +1747,7 @@ function bgLoad(){
     // swaps removed
   }
   if(myId()) run('clientGetMySwaps',r=>{D.mySwaps=r||[];},null,myId());
-  if(!isTrueAdmin()) { loadClockStatus(); loadPendingStats(); loadBadges(); }
+  if(!isTrueAdmin()) { loadClockStatus(); loadPendingStats(); loadBadges(); loadCacheHunt(); }
   if(!isTrueAdmin() && D.nextPeriod) {
     run('clientGetAvailability', r=>{ D.availNext=r||[]; }, null, D.nextPeriod.id);
     run('clientGetShifts', r=>{ D.shiftsNext=r||[]; if(PANEL==='dashboard') go('dashboard'); }, null, D.nextPeriod.id);
@@ -1698,6 +1760,7 @@ function doImpersonate(){
   if(IMPERSONATE){
     // Stop impersonation
     IMPERSONATE=null;
+    BADGES=[]; // clear the impersonated guard's badges so the grid reloads fresh
     setSidebarUser(); buildSidebar(); go('dashboard');
     toast('Impersonation ended.','warn');
     return;
@@ -1707,7 +1770,9 @@ function doImpersonate(){
   const guard=D.guards.find(g=>String(g.id)===sel.value);
   if(!guard){toast('Guard not found.','err');return;}
   IMPERSONATE=guard;
+  BADGES=[]; // drop any prior badges (admin's own or a previously-impersonated guard) so they reload for this guard
   GV=false; // always clear guard view toggle when impersonating
+  loadBadges(); // pull the impersonated guard's badges so the dashboard strip + stats grid match
   setSidebarUser(); buildSidebar();
   // Load the same availability data the guard's own app loads (active + next period),
   // so the impersonated dashboard/schedule matches exactly what the guard sees.
@@ -1944,6 +2009,7 @@ function renderGuardDash(el){
     ${tasks.length?`<div class="card"><div class="card-title">⚡ Action Needed</div>${tasks.map(t=>`<div class="task-row"><div style="font-size:1.1rem">${t.icon}</div><div style="flex:1;font-size:.87rem">${t.text}</div>${t.btn}</div>`).join('')}</div>`:''}
     ${tideCardHtml()}
     ${weatherCardHtml()}
+    ${cacheHuntCardHtml()}
     ${recentBadgesCardHtml()}
     <div class="card">
       <div class="card-title" style="display:flex;align-items:center;justify-content:space-between">
@@ -2005,7 +2071,12 @@ function cycleSchedView(){
 function _reqDeniedChip(avEntry){
   const req=avEntry&&avEntry.requested_status;
   if(!req) return '';
-  return `<span style="font-size:.55rem;font-weight:700;color:#475569;background:#e2e8f0;border-radius:3px;padding:0 3px;margin-left:3px;white-space:nowrap" title="Originally requested ${AV_LABELS[req]||req} — overridden by day off">req ${AV_LATE.has(req)?'🌙':''}${AV_SHORT[req]||req}</span>`;
+  // requested_status may be a single status or a '+'-joined set (e.g. "S_8HR+S_LS").
+  const parts=String(req).split('+').filter(Boolean);
+  const label=parts.map(p=>avShort(p)).join('+');
+  const late=parts.some(p=>avIsLate(p));
+  const full=parts.map(p=>avLabel(p)).join(' + ');
+  return `<span style="font-size:.55rem;font-weight:700;color:#475569;background:#e2e8f0;border-radius:3px;padding:0 3px;margin-left:3px;white-space:nowrap" title="Originally requested ${full} — overridden by day off">req ${late?'🌙':''}${label}</span>`;
 }
 function _adminOffChip(avStatus,avEntry,gid,ds){
   const reqChip=_reqDeniedChip(avEntry);
@@ -2018,7 +2089,7 @@ function _adminOffChip(avStatus,avEntry,gid,ds){
     const userNote=avEntry&&avEntry.notes&&avEntry.notes!=='guard_flex'?avEntry.notes:'';
     return`<div style="align-self:flex-start;background:#fef9c3;border-left:2px solid #ca8a04;border-radius:3px;padding:2px 5px;margin:1px;cursor:pointer;font-size:.68rem;font-weight:700;color:#92400e;display:inline-flex;align-items:center;gap:3px;flex-wrap:wrap" onclick="cellClick('${gid}','${ds}',event)" title="Guard prefers off (flexible)${userNote?' — '+userNote:''} — click to change">〜 Flex${userNote?`<span style="font-size:.6rem;font-weight:400;color:#92400e;opacity:.8">${userNote}</span>`:''}${reqChip}</div>`;
   }
-  return avStatus?`<div style="font-size:.6rem;font-weight:700;color:${AV_COLORS[avStatus]||'#ccc'};padding:0 2px 1px;line-height:1.3">${AV_LATE.has(avStatus)?'🌙 ':''}${AV_SHORT[avStatus]||avStatus}</div>`:'';
+  return avStatus?`<div style="font-size:.6rem;font-weight:700;color:${avColor(avStatus)};padding:0 2px 1px;line-height:1.3">${avIsLate(avStatus)?'🌙 ':''}${avShort(avStatus)}</div>`:'';
 }
 function renderSchedGrid(){
   const el=document.getElementById('sched-view');if(!el)return;
@@ -2184,26 +2255,18 @@ function renderSchedGrid(){
     const avCells=showAvRow?dates.map(d=>{
       const ds=ymd(d),isSat=d.getDay()===6,isFri=d.getDay()===5;
       const satBorder=isSat?'border-left:3px solid var(--ocean) !important;':'';
-      const avEntry=D.avail.find(a=>String(a.guard_id)===gid&&a.date===ds);
-      // Also check for companion LS entry (8HR+LS combo)
-      const avEntryLso=D.avail.find(a=>String(a.guard_id)===gid&&a.date===ds&&a.status==='S_LS');
-      const rawSt=avEntry?avEntry.status:null;
-      const avStatus=(rawSt==='S_8HR'&&avEntryLso)?'S_8HR_LS':rawSt;
-      const isOff=avStatus==='FIXED_OFF'||avStatus==='FLEX_OFF';
-      const bg=isOff?'#fef2f2':avStatus?AV_COLORS[avStatus]+'11':'#f9fafb';
-      const textColor=isOff?'#dc2626':avStatus?AV_COLORS[avStatus]:'#d1d5db';
-      const label=avStatus?AV_SHORT[avStatus]:'';
-      const lateIcon=avStatus&&AV_LATE.has(avStatus)?'🌙':'';
-      let cellHtml=`<td style="height:18px;padding:1px 2px;border:1px solid var(--border);background:${bg};${satBorder}text-align:center;vertical-align:middle">
-        <span style="font-size:.62rem;font-weight:700;color:${textColor};white-space:nowrap">${lateIcon}${label}</span>
-      </td>`;
+      const sts=guardDayStatuses(gid, ds);
+      const isOff=sts.some(s=>avIsOff(s));
+      const bg=isOff?'#fef2f2':sts.length?'#eff6ff':'#f9fafb';
+      const inner=sts.map(st=>`<span style="font-size:.6rem;font-weight:700;color:${avColor(st)};white-space:nowrap">${avIsLate(st)?'🌙':''}${avShort(st)}</span>`).join('<span style="opacity:.35">·</span>');
+      let cellHtml=`<td style="height:18px;padding:1px 2px;border:1px solid var(--border);background:${bg};${satBorder}text-align:center;vertical-align:middle">${inner}</td>`;
       if(isFri) cellHtml+=`<td style="height:18px;background:var(--foam);border:1px solid var(--border)"></td>`;
       return cellHtml;
     }).join(''):[];
 
     const hasAvailNoShift = showAvRow && dates.some(d=>{
       const ds=ymd(d);
-      const av=D.avail.find(a=>String(a.guard_id)===gid&&a.date===ds&&AV_AVAIL.has(a.status));
+      const av=D.avail.find(a=>String(a.guard_id)===gid&&a.date===ds&&avIsWorking(a.status));
       const sh=D.shifts.find(s=>s.date===ds&&String(s.assigned_guard_id)===gid&&s.status!=='cancelled');
       return av&&!sh;
     });
@@ -2303,15 +2366,17 @@ R['full-schedule-admin']=function(){
   const adminCountByDate={},guardCountByDate={},lateCountByDate={};
   if(FSA_VIEW==='guard'){
     const adminPostIds=new Set(D.posts.filter(p=>p.name.trim().toLowerCase()==='admin').map(p=>p.id));
+    const cadetIds=new Set(D.guards.filter(g=>String(g.rank||'').trim().toLowerCase()==='cadet').map(g=>String(g.id)));
     dates.forEach(d=>{
       const ds=ymd(d);
       const dayShifts=D.shifts.filter(s=>s.date===ds&&s.assigned_guard_id&&s.status!=='cancelled');
       const adminIds=new Set(dayShifts.filter(s=>adminPostIds.has(s.post_id)).map(s=>String(s.assigned_guard_id)));
       const guardIds=new Set(dayShifts.filter(s=>!adminPostIds.has(s.post_id)).map(s=>String(s.assigned_guard_id)));
       adminIds.forEach(id=>guardIds.delete(id)); // anyone on an admin shift doesn't count toward guards in
+      cadetIds.forEach(id=>guardIds.delete(id)); // cadets don't count toward guards in
       adminCountByDate[ds]=adminIds.size;
       guardCountByDate[ds]=guardIds.size;
-      lateCountByDate[ds]=new Set(dayShifts.filter(isLateShift).map(s=>String(s.assigned_guard_id))).size;
+      lateCountByDate[ds]=new Set(dayShifts.filter(s=>LATE_TMPL.has(s.template_code)).map(s=>String(s.assigned_guard_id))).size;
     });
   }
   let th=`<tr><th style="background:var(--navy);color:#fff;padding:8px 10px;text-align:left;position:sticky;left:0;z-index:20;min-width:${nameW}">${colLabel}</th>`;
@@ -2351,7 +2416,7 @@ R['full-schedule-admin']=function(){
       </tr>`;
 
       const postGuards=guardIds.map(gid=>D.guards.find(g=>String(g.id)===gid)).filter(Boolean)
-        .sort((a,b)=>rankIdx(a.rank)-rankIdx(b.rank));
+        .sort((a,b)=>rankIdx(a.rank)-rankIdx(b.rank)||guardTiebreak(a,b));
       postGuards.forEach(g=>{
         const gid=String(g.id),rc=RC[g.rank]||'#94a3b8';
         const hasAvailNoShift=dates.some(d=>{
@@ -2375,7 +2440,7 @@ R['full-schedule-admin']=function(){
               :(t&&t.start_time!=='Custom'&&t.start_time!=='TBD'?fmtTime(t.start_time)+'–'+fmtTime(t.end_time):'');
             return`<td class="cell-assigned ${colCls}" onclick="cellClick('${gid}','${ds}',event)" style="cursor:pointer;${satBorder};padding:2px">
               <div style="background:${pc}22;border-left:3px solid ${pc};border-radius:4px;padding:2px 4px;font-size:.72rem;font-weight:700">
-                <span style="color:${pc}">✓ ${shift.template_code}</span>${avDot}
+                <span style="color:${pc}">${String(shift.sick)==='true'?'🤒':'✓'} ${shift.template_code}</span>${avDot}
                 ${_shiftTime?`<div style="font-size:.62rem;color:var(--muted)">${_shiftTime}</div>`:''}
               </div>
             </td>`;
@@ -2421,7 +2486,7 @@ R['full-schedule-admin']=function(){
 
   } else {
     // BY GUARD view — one row per guard, shifts color-coded by post
-    const sortedGuards=[...D.guards].sort((a,b)=>rankIdx(a.rank)-rankIdx(b.rank));
+    const sortedGuards=[...D.guards].sort((a,b)=>rankIdx(a.rank)-rankIdx(b.rank)||guardTiebreak(a,b));
     sortedGuards.forEach(g=>{
       const gid=String(g.id),rc=RC[g.rank]||'#94a3b8';
       const guardShiftsAll=D.shifts.filter(s=>String(s.assigned_guard_id)===gid&&s.status!=='cancelled');
@@ -2436,7 +2501,7 @@ R['full-schedule-admin']=function(){
             const p=D.posts.find(x=>x.id===shift.post_id);
             const abbr=p?p.name.split(' ')[0]:'';
             return`<div onclick="cellClick('${gid}','${ds}',event)" style="background:${pc}22;border-left:3px solid ${pc};border-radius:4px;padding:2px 4px;font-size:.7rem;font-weight:700;cursor:pointer;margin-bottom:1px">
-              <span style="color:${pc}">${shift.template_code}</span>
+              <span style="color:${pc}">${String(shift.sick)==='true'?'🤒 ':''}${shift.template_code}</span>
               <div style="font-size:.6rem;color:var(--text);opacity:.75;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:72px">${abbr}</div>
             </div>`;
           }).join('');
@@ -2488,18 +2553,40 @@ R['full-schedule-admin']=function(){
       if(last&&last.wk===wk)last.count++;else groups.push({wk,count:1});
     });
     weekBar=`<tr><th style="position:sticky;left:0;z-index:19;background:#fff;border:none;padding:0;min-width:${nameW}"></th>`;
+    const _chip=(bg,fg,txt)=>`<span style="display:inline-block;padding:1px 7px;border-radius:999px;font-size:.62rem;font-weight:700;white-space:nowrap;background:${bg};color:${fg}">${txt}</span>`;
     groups.forEach(grp=>{
+      const pub=(D.weekStates||{})[grp.wk]==='published';
+      const chip=pub?_chip('#dcfce7','#166534','● PUBLISHED'):_chip('#fef9c3','#854d0e','● DRAFT');
+      const actions=pub
+        ? `<button class="btn btn-outline btn-sm" style="white-space:nowrap" onclick="doUnpublishWeek('${grp.wk}')">↩ Unpublish</button>`
+        : `<button class="btn btn-green btn-sm" style="white-space:nowrap" onclick="showPublishWeek('${grp.wk}')">✅ Publish Week</button>
+           <button class="btn btn-outline btn-sm" style="white-space:nowrap" onclick="doDiscardWeek('${grp.wk}')">🗑 Discard</button>`;
       weekBar+=`<th colspan="${grp.count}" style="position:static;background:#fff;border:none;padding:5px 4px 7px;text-align:center">
-        <button class="btn btn-green btn-sm" style="white-space:nowrap" onclick="showPublishWeek('${grp.wk}')">📢 Publish week of ${fds(grp.wk)}</button>
+        <div style="display:flex;gap:5px;align-items:center;justify-content:center;flex-wrap:wrap">
+          <span style="font-size:.7rem;font-weight:700;white-space:nowrap">Wk of ${fds(grp.wk)}</span>${chip}${actions}
+        </div>
       </th>`;
     });
     weekBar+=`</tr>`;
   }
 
+  // Sat–Fri work-week selector for the auto-scheduler
+  const _sats=dates.filter(d=>d.getDay()===6);
+  const _todayMs=(()=>{const t=new Date();t.setHours(12,0,0,0);return t.getTime();})();
+  let _selWk='';
+  _sats.forEach(d=>{const s=new Date(d);s.setHours(12,0,0,0);const e=new Date(s);e.setDate(s.getDate()+6);if(_todayMs>=s.getTime()&&_todayMs<=e.getTime())_selWk=ymd(d);});
+  if(!_selWk&&_sats.length)_selWk=ymd(_sats[_sats.length-1]);
+  const weekOpts=_sats.map(d=>{const wd=ymd(d);return `<option value="${wd}"${wd===_selWk?' selected':''}>Week of ${MONTHS[d.getMonth()]} ${d.getDate()}</option>`;}).join('');
+  const autoBar=_sats.length?`
+      <span style="width:1px;height:22px;background:var(--border);margin:0 2px"></span>
+      <select class="sel" id="fsa-week" style="width:auto">${weekOpts}</select>
+      <button class="btn btn-wave btn-sm" onclick="autoAssignWeekClick()">⚡ Auto-Assign</button>
+      <button class="btn btn-outline btn-sm" onclick="clearWeekClick()">🗑 Clear Week</button>`:'';
+
   el.innerHTML=`
     <div class="flex gap2 wrap items-c" style="margin-bottom:10px">
       <select class="sel" style="width:auto" onchange="switchPeriod(this.value)">${pOpts}</select>
-      <button class="btn btn-outline btn-sm" onclick="toggleFsaView()">${FSA_VIEW==='post'?'👤 By Guard':'📋 By Post'}</button>
+      <button class="btn btn-outline btn-sm" onclick="toggleFsaView()">${FSA_VIEW==='post'?'👤 By Guard':'📋 By Post'}</button>${autoBar}
     </div>
     <div class="card" style="padding:${mob?'4px':'8px'}">
       <div class="fsa-wrap">
@@ -2508,6 +2595,54 @@ R['full-schedule-admin']=function(){
     </div>`;
   if(_prevScroll){const w=el.querySelector('.fsa-wrap');if(w){w.scrollLeft=_prevScroll.l;w.scrollTop=_prevScroll.t;}}
 };
+
+// ── Auto-scheduler: assign / clear a work week ──
+function _selectedWeek(){const s=document.getElementById('fsa-week');return s?{ws:s.value,label:s.options[s.selectedIndex]?.text||s.value}:null;}
+function autoAssignWeekClick(){
+  const w=_selectedWeek(); if(!w||!w.ws){toast('No week selected.','err');return;}
+  showModal(`<div class="modal-title">⚡ Auto-Assign ${w.label}</div>
+    <p style="margin-bottom:8px">Assign guards from their availability for <b>${w.label}</b> — balancing the three beaches, honoring preferred posts, and capping at 40h (late shifts excluded).</p>
+    <p class="muted" style="margin-bottom:18px">Guards already scheduled that week are left as-is (fills gaps only).</p>
+    <div class="modal-foot">
+      <button class="btn btn-outline" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-wave" id="aa-go" onclick="doAutoAssignWeek('${w.ws}',this)">⚡ Auto-Assign</button>
+    </div>`);
+}
+function doAutoAssignWeek(ws,btn){
+  if(btn){btn.disabled=true;btn.innerHTML='<span class="spinner"></span> Assigning…';}
+  arun('clientAutoAssignWeek',r=>{
+    closeModal();
+    if(r&&r.success){
+      const w=r.warnings||[];
+      toast(`Assigned ${r.assigned} shift${r.assigned===1?'':'s'} · 🌙 ${r.lateAssigned} late${w.length?` · ${w.length} note${w.length===1?'':'s'}`:''}`,'ok');
+      if(w.length) showAutoAssignNotes(w);
+      reloadShifts();
+    } else { if(btn){btn.disabled=false;btn.innerHTML='⚡ Auto-Assign';} toast(r&&r.message||'Auto-assign failed.','err'); }
+  },()=>{ if(btn){btn.disabled=false;btn.innerHTML='⚡ Auto-Assign';} toast('Auto-assign failed.','err'); },ws);
+}
+function showAutoAssignNotes(notes){
+  showModal(`<div class="modal-title">⚠️ Auto-Assign Notes</div>
+    <div style="max-height:300px;overflow-y:auto;margin-bottom:16px">${notes.map(n=>`<div style="font-size:.85rem;padding:4px 0;border-bottom:1px solid var(--border)">${n}</div>`).join('')}</div>
+    <div class="modal-foot"><button class="btn btn-navy" onclick="closeModal()">OK</button></div>`);
+}
+function clearWeekClick(){
+  const w=_selectedWeek(); if(!w||!w.ws){toast('No week selected.','err');return;}
+  showModal(`<div class="modal-title">🗑 Clear ${w.label}</div>
+    <p style="margin-bottom:8px">Remove <b>all shift assignments</b> for <b>${w.label}</b>.</p>
+    <p class="muted" style="margin-bottom:18px">Guards' availability requests are <b>not</b> touched — only the week's shifts are cleared.</p>
+    <div class="modal-foot">
+      <button class="btn btn-outline" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-coral" id="cw-go" onclick="doClearWeek('${w.ws}',this)">🗑 Clear Week</button>
+    </div>`);
+}
+function doClearWeek(ws,btn){
+  if(btn){btn.disabled=true;btn.innerHTML='<span class="spinner"></span> Clearing…';}
+  arun('clientClearWeek',r=>{
+    closeModal();
+    if(r&&r.success){ toast(`Cleared ${r.removed} shift${r.removed===1?'':'s'}.`,'ok'); reloadShifts(); }
+    else { if(btn){btn.disabled=false;btn.innerHTML='🗑 Clear Week';} toast(r&&r.message||'Clear failed.','err'); }
+  },()=>{ if(btn){btn.disabled=false;btn.innerHTML='🗑 Clear Week';} toast('Clear failed.','err'); },ws);
+}
 
 // ══════════════════════════════════════════
 // ADMIN: BOARD — public beach assignments display
@@ -2573,7 +2708,7 @@ function renderAdminBoard(ds){
   const adminPostIds=new Set(D.posts.filter(p=>p.name.trim().toLowerCase()==='admin').map(p=>p.id));
   const BOARD_RANK_ORDER=['lifeguard supervisor','crew captain','beach captain','captain','lieutenant','vet','guard','rookie','cadet','replacement','volunteer'];
   const boardRankIdx=r=>{const i=BOARD_RANK_ORDER.indexOf((r||'').toLowerCase());return i<0?99:i;};
-  const boardSort=(a,b)=>boardRankIdx(a.rank)-boardRankIdx(b.rank)||parseFloat(b.pay_rate||0)-parseFloat(a.pay_rate||0);
+  const boardSort=(a,b)=>boardRankIdx(a.rank)-boardRankIdx(b.rank)||guardTiebreak(a,b);
   const officers=shifts
     .filter(s=>adminPostIds.has(s.post_id))
     .map(s=>D.guards.find(g=>String(g.id)===String(s.assigned_guard_id)))
@@ -2709,7 +2844,7 @@ function cellClick(guardId,dateStr,event){
         const p=D.posts.find(x=>x.id===s.post_id);
         const pc=postColor(s.post_id);
         return`<div style="background:${pc}22;border-left:3px solid ${pc};border-radius:8px;padding:10px 12px;margin-bottom:8px">
-          <div style="font-weight:700;color:${pc}">${t?t.name:s.template_code} @ ${p?p.name:'—'}</div>
+          <div style="font-weight:700;color:${pc}">${String(s.sick)==='true'?'🤒 ':''}${t?t.name:s.template_code} @ ${p?p.name:'—'}${String(s.sick)==='true'?' <span style="color:var(--coral)">· SICK</span>':''}</div>
           <div class="flex gap2 mt1">
             <button class="btn btn-wave btn-sm" onclick="showEditShiftBSheet('${s.id}')">Edit</button>
             <button class="btn btn-coral btn-sm" onclick="doRemoveCellShift('${s.id}');closeBSheet()">Remove</button>
@@ -2721,7 +2856,7 @@ function cellClick(guardId,dateStr,event){
         '<div class="pop-divider" style="margin:8px 0"></div>'+
         '<div class="fg"><label>Add Another Shift</label></div>'+
         '<div id="bap-post-wrap"><div class="fg"><select id="bap-post" class="sel">'+D.posts.map(x=>'<option value="'+x.id+'">'+x.name+'</option>').join('')+'</select></div></div>'+
-        '<div class="fg"><select id="bap-tmpl" class="sel" onchange="onBshTmplChange(this)">'+D.templates.filter(x=>ASSIGN_TMPL_CODES.includes(x.code)).map(x=>'<option value="'+x.code+'">'+x.name+' ('+fmtTime(x.start_time)+'–'+fmtTime(x.end_time)+')</option>').join('')+'<option value="DAY_OFF">─ Mark Day Off ─</option></select></div>'+
+        '<div class="fg"><select id="bap-tmpl" class="sel" onchange="onBshTmplChange(this)">'+assignableTemplates().map(x=>'<option value="'+x.code+'">'+x.name+' ('+fmtTime(x.start_time)+'–'+fmtTime(x.end_time)+')</option>').join('')+'<option value="DAY_OFF">─ Mark Day Off ─</option></select></div>'+
         '<div id="bap-spec-times" style="display:none;flex-direction:column;gap:8px;margin-bottom:4px">'+
           '<div style="display:flex;gap:8px;flex-wrap:wrap">'+
             '<label style="display:flex;align-items:center;gap:4px;font-size:.85rem"><span style="color:#64748b">In:</span>'+
@@ -2756,7 +2891,7 @@ function cellClick(guardId,dateStr,event){
               '<input type="time" id="bap-spec-out" class="inp" style="padding:4px 8px;font-size:.85rem;width:120px"></label>'+
           '</div>'+
         '</div>';
-      const _mTmplSel=D.templates.filter(x=>ASSIGN_TMPL_CODES.includes(x.code)).map(x=>'<option value="'+x.code+'"'+(_mIsSpec&&x.code==='SPEC'?' selected':'')+'>'+x.name+' ('+fmtTime(x.start_time)+'–'+fmtTime(x.end_time)+')</option>').join('');
+      const _mTmplSel=assignableTemplates().map(x=>'<option value="'+x.code+'"'+(_mIsSpec&&x.code==='SPEC'?' selected':'')+'>'+x.name+' ('+fmtTime(x.start_time)+'–'+fmtTime(x.end_time)+')</option>').join('');
       const _mIsOff=avEntry&&(_avS==='FIXED_OFF'||_avS==='FLEX_OFF');
       const _mOffActions=_mIsOff?
         '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px">'+
@@ -2786,7 +2921,7 @@ function cellClick(guardId,dateStr,event){
       const p=D.posts.find(x=>x.id===s.post_id);
       const pc=postColor(s.post_id);
       return`<div style="background:${pc}11;border-left:2px solid ${pc};border-radius:4px;padding:5px 8px;margin-bottom:4px;display:flex;align-items:center;gap:6px">
-        <span style="flex:1;font-size:.8rem;font-weight:600;color:${pc}">✓ ${t?t.name:s.template_code} ${p?'@ '+p.name:''}</span>
+        <span style="flex:1;font-size:.8rem;font-weight:600;color:${pc}">${String(s.sick)==='true'?'🤒':'✓'} ${t?t.name:s.template_code} ${p?'@ '+p.name:''}${String(s.sick)==='true'?' <span style="color:var(--coral);font-weight:700">SICK</span>':''}</span>
         <button class="btn btn-ghost btn-xs" onclick="editCellShift('${s.id}','${gid}','${dateStr}')" title="Edit" style="color:var(--wave);padding:2px 5px;font-size:.75rem">✎</button>
         <button class="btn btn-ghost btn-xs" onclick="doRemoveCellShift('${s.id}')" title="Remove" style="color:var(--coral);padding:2px 5px;font-size:.75rem">✕</button>
       </div>`;
@@ -2800,7 +2935,7 @@ function cellClick(guardId,dateStr,event){
         <div id="ap-post-wrap"><label>Post</label>
         <select id="ap-post">${D.posts.map(x=>`<option value="${x.id}">${x.name}</option>`).join('')}</select></div>
         <label>Template</label>
-        <select id="ap-tmpl" onchange="onAssignTmplChange(this)">${D.templates.filter(x=>ASSIGN_TMPL_CODES.includes(x.code)).map(x=>`<option value="${x.code}">${x.name} (${fmtTime(x.start_time)}–${fmtTime(x.end_time)})</option>`).join('')}<option value="DAY_OFF">─ Mark Day Off ─</option></select>
+        <select id="ap-tmpl" onchange="onAssignTmplChange(this)">${assignableTemplates().map(x=>`<option value="${x.code}">${x.name} (${fmtTime(x.start_time)}–${fmtTime(x.end_time)})</option>`).join('')}<option value="DAY_OFF">─ Mark Day Off ─</option></select>
         <div id="ap-spec-times" style="display:none;flex-direction:column;gap:4px;grid-column:1/-1">
           <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
             <label style="display:flex;align-items:center;gap:4px;font-size:.8rem"><span style="color:var(--muted);min-width:20px">In:</span>
@@ -2837,7 +2972,7 @@ function cellClick(guardId,dateStr,event){
     const lateAvailOnDay=D.avail.filter(a=>a.date===dateStr&&AV_LATE.has(a.status))
       .map(a=>({entry:a,guard:D.guards.find(g=>String(g.id)===String(a.guard_id))}))
       .filter(x=>x.guard)
-      .sort((a,b)=>(RANK_ORDER.indexOf(a.guard.rank)||99)-(RANK_ORDER.indexOf(b.guard.rank)||99));
+      .sort((a,b)=>(RANK_ORDER.indexOf(a.guard.rank)||99)-(RANK_ORDER.indexOf(b.guard.rank)||99)||guardTiebreak(a.guard,b.guard));
     const seniorPresent=lateAvailOnDay.some(x=>LATE_SENIOR.includes(x.guard.rank));
     const lateSection=lateAvailOnDay.length?`
       <div class="pop-divider"></div>
@@ -2876,7 +3011,7 @@ function cellClick(guardId,dateStr,event){
         <div id="ap-post-wrap"><label>Post</label>
         <select id="ap-post">${D.posts.map(x=>`<option value="${x.id}">${x.name}</option>`).join('')}</select></div>
         <label>Template</label>
-        <select id="ap-tmpl" onchange="onAssignTmplChange(this)">${D.templates.filter(x=>ASSIGN_TMPL_CODES.includes(x.code)).map(x=>`<option value="${x.code}"${_isSpecAvail&&x.code==='SPEC'?' selected':''}>${x.name} (${fmtTime(x.start_time)}–${fmtTime(x.end_time)})</option>`).join('')}<option value="DAY_OFF">─ Mark Day Off ─</option></select>
+        <select id="ap-tmpl" onchange="onAssignTmplChange(this)">${assignableTemplates().map(x=>`<option value="${x.code}"${_isSpecAvail&&x.code==='SPEC'?' selected':''}>${x.name} (${fmtTime(x.start_time)}–${fmtTime(x.end_time)})</option>`).join('')}<option value="DAY_OFF">─ Mark Day Off ─</option></select>
         ${_specTimesHtml}
         <button class="btn btn-green btn-sm" style="width:100%" onclick="spinAssign(this,'${gid}','${dateStr}')">✓ Assign Shift</button>
       </div>
@@ -2904,7 +3039,7 @@ function cellClickWithSlot(guardId, dateStr, postId, tmplCode, event){
     const _cwsSpIn=_cwsIsSpec?(avEntry.custom_start||''):'';
     const _cwsSpOut=_cwsIsSpec?(avEntry.custom_end||''):'';
     const postOpts=D.posts.map(x=>'<option value="'+x.id+'"'+(x.id===postId?' selected':'')+'>'+x.name+'</option>').join('');
-    const tmplOpts=D.templates.filter(x=>ASSIGN_TMPL_CODES.includes(x.code)).map(x=>'<option value="'+x.code+'"'+(x.code===tmplCode?' selected':'')+'>'+x.name+' ('+fmtTime(x.start_time)+'–'+fmtTime(x.end_time)+')</option>').join('');
+    const tmplOpts=assignableTemplates().map(x=>'<option value="'+x.code+'"'+(x.code===tmplCode?' selected':'')+'>'+x.name+' ('+fmtTime(x.start_time)+'–'+fmtTime(x.end_time)+')</option>').join('');
     const _cwsSpecTimes=
       '<div id="bap-spec-times" style="display:'+(tmplCode==='SPEC'?'flex':'none')+';flex-direction:column;gap:8px;margin-bottom:4px">'+
         '<div style="display:flex;gap:8px;flex-wrap:wrap">'+
@@ -2940,7 +3075,7 @@ function cellClickWithSlot(guardId, dateStr, postId, tmplCode, event){
       <div id="ap-post-wrap"><label>Post</label>
       <select id="ap-post">${D.posts.map(x=>`<option value="${x.id}"${x.id===postId?' selected':''}>${x.name}</option>`).join('')}</select></div>
       <label>Template</label>
-      <select id="ap-tmpl" onchange="onAssignTmplChange(this)">${D.templates.filter(x=>ASSIGN_TMPL_CODES.includes(x.code)).map(x=>`<option value="${x.code}"${x.code===tmplCode?' selected':''}>${x.name} (${fmtTime(x.start_time)}–${fmtTime(x.end_time)})</option>`).join('')}<option value="DAY_OFF">─ Mark Day Off ─</option></select>
+      <select id="ap-tmpl" onchange="onAssignTmplChange(this)">${assignableTemplates().map(x=>`<option value="${x.code}"${x.code===tmplCode?' selected':''}>${x.name} (${fmtTime(x.start_time)}–${fmtTime(x.end_time)})</option>`).join('')}<option value="DAY_OFF">─ Mark Day Off ─</option></select>
       <div id="ap-spec-times" style="display:${tmplCode==='SPEC'?'flex':'none'};flex-direction:column;gap:4px;grid-column:1/-1">
         <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
           <label style="display:flex;align-items:center;gap:4px;font-size:.8rem"><span style="color:var(--muted);min-width:20px">In:</span>
@@ -3049,25 +3184,28 @@ function doRemoveDayOff(guardId,dateStr){
 }
 
 // Restore the guard's original request that was overridden by a day off.
+// requested_status may be a '+'-joined set, so it restores back to multiple rows.
 function doRestoreRequest(guardId,dateStr){
   const gid=String(guardId);
-  const existing=D.avail.find(a=>String(a.guard_id)===gid&&a.date===dateStr);
-  const req=existing&&existing.requested_status;
+  const dayRows=D.avail.filter(a=>String(a.guard_id)===gid&&a.date===dateStr);
+  const req=dayRows.map(a=>a.requested_status).find(r=>r);
   if(!req){doRemoveDayOff(guardId,dateStr);return;}
-  const prev={status:existing.status,requested_status:existing.requested_status,notes:existing.notes};
-  existing.status=req;existing.requested_status='';existing.notes='';
+  const reqStatuses=String(req).split('+').filter(Boolean);
+  const prev=dayRows.map(a=>({...a}));
+  const _clearDay=()=>{for(let i=D.avail.length-1;i>=0;i--){if(String(D.avail[i].guard_id)===gid&&D.avail[i].date===dateStr)D.avail.splice(i,1);}};
+  const _rerender=()=>{ if(PANEL==='schedule') renderSchedGrid(); else if(PANEL==='full-schedule-admin') R['full-schedule-admin'](); };
+  _clearDay();
+  reqStatuses.forEach(st=>D.avail.push({guard_id:gid,date:dateStr,status:st,requested_status:'',custom_start:'',custom_end:'',ot_willing:false,notes:''}));
   closeAllPops();closeBSheet();
-  if(PANEL==='schedule') renderSchedGrid();
-  else if(PANEL==='full-schedule-admin') R['full-schedule-admin']();
+  _rerender();
   toast('Request restored.','ok');
   arun('clientSubmitAvailability',r=>{
     if(!r||!r.success){
-      existing.status=prev.status;existing.requested_status=prev.requested_status;existing.notes=prev.notes;
-      if(PANEL==='schedule') renderSchedGrid();
-      else if(PANEL==='full-schedule-admin') R['full-schedule-admin']();
+      _clearDay(); prev.forEach(a=>D.avail.push(a));
+      _rerender();
       toast(r?.message||'Failed to restore request.','err');
     }
-  },null,[{guard_id:gid,date:dateStr,status:req,custom_start:existing.custom_start||'',custom_end:existing.custom_end||'',ot_willing:existing.ot_willing||false,notes:''}]);
+  },null,reqStatuses.map(st=>({guard_id:gid,date:dateStr,status:st,custom_start:'',custom_end:'',ot_willing:false,notes:''})));
 }
 
 function doAssignShift(guardId,dateStr){
@@ -3194,20 +3332,48 @@ function quickAssignLate(guardId,dateStr){
 function doUpdateCellShift(shiftId){
   const postId=document.getElementById('cp-post')?.value;
   const tmplCode=document.getElementById('cp-tmpl')?.value;
+  const sick=!!document.getElementById('cp-sick')?.checked;
+  _commitShiftEdit(shiftId,postId,tmplCode,sick);
+}
+
+// Save post/template/sick for one shift. The sick flag is per-instance (never
+// applied to a whole recurring series). When sick is newly turned on, first
+// check for overlapping recorded hours and warn before committing.
+let _pendingSickSave=null;
+function _commitShiftEdit(shiftId,postId,tmplCode,sick){
   const shift=D.shifts.find(s=>s.id===shiftId);
-  if(shift&&shift.series_id){
-    showSeriesPrompt('edit',shiftId,shift.series_id,shift.date,{post_id:postId,template_code:tmplCode});
-  } else {
-    // Optimistic update
-    if(shift){shift.post_id=postId;shift.template_code=tmplCode;}
-    closeAllPops();
+  const wasSick=shift&&String(shift.sick)==='true';
+  const doSave=()=>{
+    const changedPT=shift&&(postId!==shift.post_id||tmplCode!==shift.template_code);
+    if(shift&&shift.series_id&&changedPT){
+      // Post/template edits on a series go through the scope prompt; sick stays instance-only.
+      if(sick!==wasSick){shift.sick=sick?'true':'';arun('clientUpdateShift',()=>{},null,{id:shiftId,sick:sick?'true':''});}
+      showSeriesPrompt('edit',shiftId,shift.series_id,shift.date,{post_id:postId,template_code:tmplCode});
+      return;
+    }
+    if(shift){shift.post_id=postId;shift.template_code=tmplCode;shift.sick=sick?'true':'';}
+    closeAllPops();closeBSheet();
     if(PANEL==='schedule') renderSchedGrid();
     else if(PANEL==='full-schedule-admin') R['full-schedule-admin']();
     arun('clientUpdateShift',r=>{
-      if(r&&r.success){toast('Updated!','ok');reloadShifts();}
-      else { toast('Failed.','err'); reloadShifts(); } // revert on fail
-    },null,{id:shiftId,post_id:postId,template_code:tmplCode});
-  }
+      if(r&&r.success){toast(sick?'Saved — marked as SICK.':'Updated!','ok');reloadShifts();}
+      else{toast('Failed.','err');reloadShifts();} // revert on fail
+    },null,{id:shiftId,post_id:postId,template_code:tmplCode,sick:sick?'true':''});
+  };
+  if(sick&&!wasSick){
+    arun('clientShiftHasRecordedHours',has=>{
+      if(has){
+        _pendingSickSave=doSave;
+        showModal(`<div class="modal-title">🤒 Recorded hours found</div>
+          <p style="margin-bottom:16px">This guard has <strong>recorded hours</strong> on this day that overlap this shift. Saving it as a <strong>sick day</strong> anyway may misreport their pay.</p>
+          <p class="muted" style="margin-bottom:18px">Mark it as SICK anyway?</p>
+          <div class="modal-foot">
+            <button class="btn btn-outline" onclick="closeModal()">Cancel</button>
+            <button class="btn btn-coral" onclick="closeModal();const f=_pendingSickSave;_pendingSickSave=null;f&&f()">Save as SICK anyway</button>
+          </div>`);
+      } else doSave();
+    },null,shiftId);
+  } else doSave();
 }
 
 function editCellShift(shiftId, gid, dateStr){
@@ -3221,7 +3387,10 @@ function editCellShift(shiftId, gid, dateStr){
       <label>Post</label>
       <select id="cp-post">${D.posts.map(x=>`<option value="${x.id}"${x.id===shift.post_id?' selected':''}>${x.name}</option>`).join('')}</select>
       <label>Template</label>
-      <select id="cp-tmpl">${D.templates.filter(x=>ASSIGN_TMPL_CODES.includes(x.code)).map(x=>`<option value="${x.code}"${x.code===shift.template_code?' selected':''}>${x.name} (${fmtTime(x.start_time)}–${fmtTime(x.end_time)})</option>`).join('')}</select>
+      <select id="cp-tmpl">${assignableTemplates().map(x=>`<option value="${x.code}"${x.code===shift.template_code?' selected':''}>${x.name} (${fmtTime(x.start_time)}–${fmtTime(x.end_time)})</option>`).join('')}</select>
+      <label style="display:flex;align-items:center;gap:6px;font-size:.82rem;font-weight:600;color:var(--coral);cursor:pointer;margin:4px 0 2px">
+        <input type="checkbox" id="cp-sick"${String(shift.sick)==='true'?' checked':''} style="width:auto"> 🤒 Mark as sick day
+      </label>
       <button class="btn btn-green btn-sm" style="width:100%" onclick="doUpdateCellShift('${shiftId}')">Save Changes</button>
       <button class="btn btn-ghost btn-sm" style="width:100%;margin-top:4px" onclick="closeAllPops()">Cancel</button>
     </div>`;
@@ -3236,29 +3405,19 @@ function showEditShiftBSheet(shiftId){
     +D.posts.map(x=>'<option value="'+x.id+'"'+(x.id===shift.post_id?' selected':'')+'>'+x.name+'</option>').join('')
     +'</select></div>'
     +'<div class="fg"><label>Template</label><select id="bsh-tmpl" class="sel">'
-    +D.templates.filter(x=>ASSIGN_TMPL_CODES.includes(x.code)).map(x=>'<option value="'+x.code+'"'+(x.code===shift.template_code?' selected':'')+'>'+x.name+' ('+fmtTime(x.start_time)+'–'+fmtTime(x.end_time)+')</option>').join('')
+    +assignableTemplates().map(x=>'<option value="'+x.code+'"'+(x.code===shift.template_code?' selected':'')+'>'+x.name+' ('+fmtTime(x.start_time)+'–'+fmtTime(x.end_time)+')</option>').join('')
     +'</select></div>'
+    +'<label style="display:flex;align-items:center;gap:8px;font-size:.9rem;font-weight:600;color:var(--coral);margin:6px 0 10px"><input type="checkbox" id="bsh-sick"'+(String(shift.sick)==='true'?' checked':'')+' style="width:auto;transform:scale(1.2)"> 🤒 Mark as sick day</label>'
     +'<button class="btn btn-green" style="width:100%" onclick="doMobUpdateShift(\''+shiftId+'\')">Save Changes</button>');
 }
 
 function doMobUpdateShift(shiftId){
   const postId=document.getElementById('bsh-post')?.value;
   const tmplCode=document.getElementById('bsh-tmpl')?.value;
+  const sick=!!document.getElementById('bsh-sick')?.checked;
   const shift=D.shifts.find(s=>s.id===shiftId);
   if(!shift||!postId||!tmplCode)return;
-  if(shift.series_id){
-    closeBSheet();
-    showSeriesPrompt('edit',shiftId,shift.series_id,shift.date,{post_id:postId,template_code:tmplCode});
-  } else {
-    shift.post_id=postId;shift.template_code=tmplCode;
-    closeBSheet();
-    if(PANEL==='schedule') renderSchedGrid();
-    else if(PANEL==='full-schedule-admin') R['full-schedule-admin']();
-    arun('clientUpdateShift',r=>{
-      if(r&&r.success){toast('Updated!','ok');reloadShifts();}
-      else{toast('Failed.','err');reloadShifts();}
-    },null,{id:shiftId,post_id:postId,template_code:tmplCode});
-  }
+  _commitShiftEdit(shiftId,postId,tmplCode,sick);
 }
 
 function doRemoveCellShift(shiftId){
@@ -3338,7 +3497,8 @@ function switchPeriod(pid){
   const need=isTrueAdmin()?3:2;
   const tick=()=>{n++;if(!done&&n>=need){done=true;doRender();}};
   setTimeout(()=>{if(!done){done=true;doRender();}},10000);
-  run('clientGetShifts',r=>{D.shifts=r||[];tick();},()=>tick(),pid);
+  if(isTrueAdmin()){ arun('clientGetShiftsAdmin',r=>{D.shifts=r||[];tick();},()=>tick(),pid); loadWeekStates(pid); }
+  else run('clientGetShifts',r=>{D.shifts=r||[];tick();},()=>tick(),pid);
   run('clientGetAvailability',a=>{D.avail=a||[];tick();},()=>tick(),pid);
   if(isTrueAdmin())run('clientGetWeeklySummary',h=>{D.weeklyHours=h||{};tick();},()=>tick(),pid);
 }
@@ -3408,7 +3568,7 @@ R.guards=function(){
     </tr></thead>
     <tbody>${sorted.map(g=>`<tr>
       <td><strong>${g.name}</strong></td>
-      <td><span class="rank-badge" style="${rs(g.rank)}">${g.rank}</span></td>
+      <td><span class="rank-badge" style="${rs(g.rank)}">${g.rank}</span>${g.years_service!==''&&g.years_service!=null&&!isNaN(parseFloat(g.years_service))?`<span class="muted" style="font-size:.72rem;margin-left:6px;white-space:nowrap">${parseFloat(g.years_service)} yr${parseFloat(g.years_service)===1?'':'s'}</span>`:''}</td>
       <td style="font-size:.82rem">${g.email}</td>
       <td><span class="pay-hidden" id="pay-${g.id}" onclick="revealPay('${g.id}','${g.pay_rate||0}')" title="Click to reveal">•••</span></td>
       <td style="font-size:.82rem;text-align:center">${g.locker_number||'—'}</td>
@@ -3416,6 +3576,7 @@ R.guards=function(){
       <td><span class="badge b-${g.status==='active'?'approved':'pending'}">${g.status}</span></td>
       <td class="flex gap2">
         <button class="btn btn-outline btn-sm" onclick="showEditGuardModal('${g.id}')">Edit</button>
+        <button class="btn btn-outline btn-sm" onclick="showGuardNotesModal('${g.id}')">📝 Notes</button>
         <button class="btn btn-outline btn-sm" onclick="showInviteModal('${g.id}','${g.name}','${g.email}')">✉️ Invite</button>
         <button class="btn btn-outline btn-sm" onclick="showSetPasswordModal('${g.id}','${g.name}')">🔑 Password</button>
         <button class="btn btn-coral btn-sm" onclick="doDeactivateGuard('${g.id}')">Remove</button>
@@ -3431,6 +3592,84 @@ function togglePayRate(inputId,btnId){
   const inp=document.getElementById(inputId),btn=document.getElementById(btnId);if(!inp)return;
   if(inp.type==='password'){inp.type='text';inp.inputMode='decimal';if(btn)btn.textContent='🙈';}
   else{inp.type='password';if(btn)btn.textContent='👁';}
+}
+
+// ── ADMIN: per-guard notes (conduct/attendance log, admin-only) ──
+// Freeform dated notes with optional tags. Never shown to guards.
+const GUARD_NOTE_TAGS = ['LATE','NO SHOW','COMMENDATION','WARNING','DISCIPLINARY','NOTE'];
+function guardNoteTagStyle(tag){
+  if(tag==='COMMENDATION') return 'background:#16a34a;color:#fff';
+  if(tag==='LATE'||tag==='NO SHOW') return 'background:#f59e0b;color:#1a1a1a';
+  if(tag==='WARNING'||tag==='DISCIPLINARY') return 'background:#ef4444;color:#fff';
+  return 'background:#334155;color:#fff';
+}
+const GN_TAG_OFF = 'background:#e5e7eb;color:#334155';
+let _gnSelTags = new Set();
+function showGuardNotesModal(guardId){
+  const g = D.guards.find(x=>String(x.id)===String(guardId));
+  const name = g ? g.name : 'Guard';
+  _gnSelTags = new Set();
+  showModal(`<div class="modal-title">📝 Notes — ${_esc(name)}</div>
+    <p class="muted" style="font-size:.78rem;margin-bottom:8px">Admin-only — guards never see these.</p>
+    <div id="gn-list" class="muted" style="max-height:34vh;overflow:auto;margin-bottom:14px">Loading…</div>
+    <div style="border-top:1px solid var(--line,#e5e7eb);padding-top:12px">
+      <div class="fg"><label>Date</label><input type="date" id="gn-date" class="inp" value="${ymd(new Date())}"></div>
+      <div class="fg"><label>Tags</label><div id="gn-tags" class="flex gap2" style="flex-wrap:wrap">
+        ${GUARD_NOTE_TAGS.map(t=>`<button type="button" class="btn btn-sm gn-tag" data-tag="${t}" onclick="toggleGuardNoteTag('${t}',this)" style="${GN_TAG_OFF}">${t}</button>`).join('')}
+      </div></div>
+      <div class="fg"><label>Note</label><textarea id="gn-note" class="inp" rows="2" placeholder="e.g. WRI, tournament captain, left 20 min early…"></textarea></div>
+      <div class="modal-foot">
+        <button class="btn btn-outline" onclick="closeModal()">Close</button>
+        <button class="btn btn-navy" onclick="saveGuardNote('${guardId}',this)">Add Note</button>
+      </div>
+    </div>`);
+  loadGuardNotes(guardId);
+}
+function loadGuardNotes(guardId){
+  arun('clientGetGuardNotes', notes=>{
+    const el=document.getElementById('gn-list'); if(!el)return;
+    if(!notes||!notes.length){ el.innerHTML='<div style="padding:8px 0">No notes yet.</div>'; return; }
+    el.innerHTML = notes.map(n=>{
+      const tags=(n.tags||'').split(',').map(t=>t.trim()).filter(Boolean)
+        .map(t=>`<span class="badge" style="${guardNoteTagStyle(t)};margin-right:4px">${_esc(t)}</span>`).join('');
+      return `<div style="padding:8px 0;border-bottom:1px solid var(--line,#eee)">
+        <div class="flex" style="justify-content:space-between;align-items:flex-start;gap:8px">
+          <div style="flex:1;min-width:0">
+            <div style="font-size:.78rem;color:var(--muted)">${fd(n.date)}${n.created_by?` · ${_esc(n.created_by)}`:''}</div>
+            ${tags?`<div style="margin:3px 0">${tags}</div>`:''}
+            ${n.note?`<div style="font-size:.9rem;white-space:pre-wrap;word-break:break-word">${_esc(n.note)}</div>`:''}
+          </div>
+          <button class="btn btn-coral btn-sm" onclick="deleteGuardNote('${n.id}','${guardId}')" title="Delete note">✕</button>
+        </div>
+      </div>`;
+    }).join('');
+  }, null, guardId);
+}
+function toggleGuardNoteTag(tag,btn){
+  if(_gnSelTags.has(tag)){ _gnSelTags.delete(tag); btn.style.cssText=GN_TAG_OFF; }
+  else { _gnSelTags.add(tag); btn.style.cssText=guardNoteTagStyle(tag); }
+}
+function saveGuardNote(guardId,btn){
+  const date=document.getElementById('gn-date')?.value||'';
+  const note=document.getElementById('gn-note')?.value||'';
+  const tags=[..._gnSelTags].join(',');
+  if(!tags && !note.trim()){ toast('Add a tag or a note.','err'); return; }
+  const _restore=()=>{ if(btn){ btn.disabled=false; btn.textContent='Add Note'; } };
+  if(btn){ btn.disabled=true; btn.textContent='Saving…'; }
+  arun('clientAddGuardNote', r=>{
+    _restore();
+    if(r&&r.success){
+      toast('Note added.','ok');
+      const ta=document.getElementById('gn-note'); if(ta)ta.value='';
+      _gnSelTags=new Set();
+      document.querySelectorAll('#gn-tags .gn-tag').forEach(b=>b.style.cssText=GN_TAG_OFF);
+      loadGuardNotes(guardId);
+    } else toast(r?.message||'Failed to add note.','err');
+  }, _restore, { guard_id: guardId, date, tags, note });
+}
+function deleteGuardNote(id,guardId){
+  if(!confirm('Delete this note? This cannot be undone.'))return;
+  arun('clientDeleteGuardNote', r=>{ if(r&&r.success)loadGuardNotes(guardId); else toast('Failed to delete.','err'); }, null, id);
 }
 
 // ══════════════════════════════════════════
@@ -3615,7 +3854,9 @@ function deleteLocationConfirm(id, name) {
 R.config=function(){
   document.getElementById('content').innerHTML=`
     <div class="card"><div class="card-title">System Configuration</div><div id="cfg-body">Loading…</div></div>
+    <div class="card"><div class="card-title">🧭 Cache Hunt</div><div id="ch-body">Loading…</div></div>
     <div class="card"><div class="card-title">🎨 Rank Colors</div><div id="rc-body">Loading…</div></div>`;
+  loadCacheHuntAdmin();
   run('clientGetConfig',cfgs=>{
     D.config=cfgs||[]; applyRC(D.config);
     const gen=D.config.filter(c=>!c.key.startsWith('rank_color_'));
@@ -3645,6 +3886,69 @@ function updateRC(rank,key,color){
   const p=document.getElementById(`rcp-${key}`);if(p)p.style.cssText=rs(rank);
   setSidebarUser();
   arun('clientSetConfig',r=>{if(r?.success)toast(`Color saved for ${rank}`,'ok');},null,key,color);
+}
+
+// ── Admin: Cache Hunt config ──────────────────────────────────
+function loadCacheHuntAdmin(){
+  arun('clientCacheHuntAdmin',d=>renderCacheHuntAdmin(d||{}),
+    ()=>{const el=document.getElementById('ch-body');if(el)el.innerHTML='<p class="muted">Could not load.</p>';});
+}
+function renderCacheHuntAdmin(d){
+  const el=document.getElementById('ch-body');if(!el)return;
+  const w=d.winner;
+  el.innerHTML=`
+    <p class="muted" style="margin-bottom:12px;font-size:.85rem">Hide a physical cache on the premises with a written-down <b>secret code</b> inside. Stand next to it and tap <b>Use my location</b> to record its GPS (guards get one distance reading per day as a hint). The <b>first guard to enter the code</b> wins the 🗺️ Treasure Hunter badge — one winner per round.</p>
+    <label style="display:flex;align-items:center;gap:8px;font-weight:600;margin-bottom:12px;cursor:pointer">
+      <input type="checkbox" id="ch-active" ${d.active?'checked':''}> Hunt active (show the card to guards)
+    </label>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:9px;margin-bottom:10px">
+      <div><label class="muted" style="font-size:.78rem">Latitude</label><input type="text" id="ch-lat" class="inp" value="${d.lat!=null?d.lat:''}" placeholder="40.3···"></div>
+      <div><label class="muted" style="font-size:.78rem">Longitude</label><input type="text" id="ch-lng" class="inp" value="${d.lng!=null?d.lng:''}" placeholder="-73.9···"></div>
+      <div><label class="muted" style="font-size:.78rem">Secret code (inside the cache)</label><input type="text" id="ch-code" class="inp" value="${(d.code||'').replace(/"/g,'&quot;')}" placeholder="e.g. SEAGULL-42"></div>
+      <div style="display:flex;align-items:flex-end"><button class="btn btn-outline btn-sm" id="ch-loc" onclick="cacheHuntUseMyLocation(this)" style="width:100%">📍 Use my location</button></div>
+    </div>
+    <div style="margin-bottom:12px"><label class="muted" style="font-size:.78rem">Prize / message shown to the winner</label>
+      <input type="text" id="ch-prize" class="inp" value="${(d.prize||'').replace(/"/g,'&quot;')}" placeholder="e.g. Bring this to the office for a $25 gift card!"></div>
+    <div class="flex gap2" style="margin-bottom:6px">
+      <button class="btn btn-wave btn-sm" onclick="doSaveCacheHunt(this)">Save</button>
+      <button class="btn btn-outline btn-sm" style="color:var(--coral)" onclick="doResetCacheHunt()">↻ Reset round</button>
+    </div>
+    ${d.ready?'':'<p style="font-size:.8rem;color:var(--coral);margin-top:6px">⚠️ Set coordinates, a secret code, and check "Hunt active" for guards to see it.</p>'}
+    <div style="margin-top:14px">
+      <div style="font-size:.82rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;margin-bottom:6px">Winner</div>
+      ${w?`<div style="font-size:.9rem;padding:8px 12px;background:var(--foam);border-radius:8px">🏆 <b>${w.name}</b> cracked it <span class="muted">— ${fd(String(w.earned_at).slice(0,10))}</span>. Reset the round to open it up again.</div>`:'<p class="muted" style="font-size:.85rem">No winner yet — the code is up for grabs.</p>'}
+    </div>`;
+}
+function cacheHuntUseMyLocation(btn){
+  if(!navigator.geolocation){toast('Location not available on this device.','err');return;}
+  const orig=btn.innerHTML;btn.disabled=true;btn.innerHTML='<span class="spinner"></span> Locating…';
+  navigator.geolocation.getCurrentPosition(pos=>{
+    document.getElementById('ch-lat').value=pos.coords.latitude.toFixed(6);
+    document.getElementById('ch-lng').value=pos.coords.longitude.toFixed(6);
+    btn.disabled=false;btn.innerHTML=orig;
+    toast(`Location captured (±${Math.round(pos.coords.accuracy)} ft accuracy).`,'ok');
+  },err=>{
+    btn.disabled=false;btn.innerHTML=orig;
+    toast(err&&err.code===1?'Location permission denied.':'Could not get location.','err');
+  },{enableHighAccuracy:true,timeout:15000,maximumAge:0});
+}
+function doSaveCacheHunt(btn){
+  const active=document.getElementById('ch-active').checked;
+  const lat=document.getElementById('ch-lat').value.trim();
+  const lng=document.getElementById('ch-lng').value.trim();
+  const code=document.getElementById('ch-code').value.trim();
+  const prize=document.getElementById('ch-prize').value.trim();
+  if(active&&(!lat||!lng)){toast('Set coordinates before activating.','err');return;}
+  if(active&&!code){toast('Set a secret code before activating.','err');return;}
+  btn.disabled=true;btn.innerHTML='<span class="spinner"></span> Saving…';
+  arun('clientCacheHuntSave',d=>{renderCacheHuntAdmin(d||{});toast('Cache Hunt saved.','ok');},
+    ()=>{btn.disabled=false;btn.textContent='Save';toast('Save failed.','err');},
+    active,lat,lng,code,prize);
+}
+function doResetCacheHunt(){
+  if(!confirm('Start a fresh round? This clears every guard\'s daily reading + find state and removes all Treasure Hunter badges. The cache coordinates are kept.'))return;
+  arun('clientCacheHuntReset',d=>{renderCacheHuntAdmin(d||{});toast('Round reset — the hunt is open again.','ok');},
+    ()=>toast('Reset failed.','err'));
 }
 
 // ══════════════════════════════════════════
@@ -3678,18 +3982,15 @@ R['my-avail']=function(){
     run('clientGetAvailability',r=>{ availCache[availViewPeriodId]=r||[]; R['my-avail'](); },null,availViewPeriodId);
     return;
   }
+  // Ensure the viewed period's SHIFTS are loaded (drives shift/event options like Mega/Tourney).
+  if (!ensureAvailShifts(()=>R['my-avail']())) { el.innerHTML='<div class="card"><p class="muted" style="padding:20px">Loading shifts…</p></div>'; return; }
 
   const viewAvail = getAvailView();
   const dates=dateRange(viewPeriod.start_date,viewPeriod.schedule_thru);
 
   const rows=dates.map(d=>{
     const ds=ymd(d), hol=holiday(ds), we=isWE(ds), isT=ds===today, isSat=d.getDay()===6;
-    const avEntry=viewAvail.find(a=>String(a.guard_id)===gid&&a.date===ds);
-    const avEntryLso=viewAvail.find(a=>String(a.guard_id)===gid&&a.date===ds&&a.status==='S_LS');
-    // If guard has both 8HR and LS entries, display as combined
-    const rawSt=avEntry?avEntry.status:null;
-    const st=(rawSt==='S_8HR'&&avEntryLso)?'S_8HR_LS':rawSt;
-    const shifts=D.shifts.filter(s=>s.date===ds&&s.status!=='cancelled');
+    const shifts=getAvailShifts().filter(s=>s.date===ds&&s.status!=='cancelled');
     const myShift=shifts.find(s=>String(s.assigned_guard_id)===gid);
     const rowBg=isT?'#e0f2fe':hol?'#fffbeb':we?'#eef2f7':'#fff'; // weekends slightly darker
     const satBorder=isSat?'border-top:3px solid var(--ocean);':'border-top:1px solid var(--border);';
@@ -3726,29 +4027,6 @@ R['my-avail']=function(){
       shiftsHtml=`<span style="font-size:.72rem;color:var(--border)">No shifts scheduled</span>`;
     }
 
-    // ── Availability option popover ──
-    // Grey out options with no matching shifts
-    const popItems=Object.entries(AV_LABELS).map(([k,v])=>{
-      // Determine if this option has matching shifts
-      let hasMatch=true;
-      if(k==='S_8HR'||k==='S_8HR_OT') hasMatch=shifts.some(s=>s.template_code==='8HR');
-      else if(k==='S_8HR_LS') hasMatch=shifts.some(s=>s.template_code==='8HR')&&shifts.some(s=>s.template_code==='LS');
-      else if(k==='S_LS8') hasMatch=shifts.some(s=>s.template_code==='LS8');
-      else if(k==='S_LS') hasMatch=shifts.some(s=>s.template_code==='LS');
-      else if(k==='S_SPEC') hasMatch=shifts.some(s=>s.template_code==='SPEC');
-      // Off/flex/special always available
-      const isOff=['FLEX_OFF','FIXED_OFF'].includes(k);
-      // Always clickable — just show "no slots" note when greyed
-      return`<div class="pop-item${st===k?' selected':''}" onclick="setMyAvail('${ds}','${k}')" style="${!isOff&&!hasMatch?'opacity:.55':''}">
-        <span class="pop-swatch" style="background:${AV_COLORS[k]}"></span>
-        ${AV_LATE.has(k)?'🌙 ':''}${v}${!isOff&&!hasMatch?` <span class="muted" style="font-size:.68rem">no slots yet</span>`:''}${st===k?' ✓':''}
-      </div>`;
-    }).join('');
-
-    const chipCls=st?`av-${st}`:'av-none';
-    const chipLabel=st?AV_LABELS[st]:'Set availability';
-    const isLate=st&&AV_LATE.has(st);
-
     return`<div style="background:${rowBg};${satBorder}display:grid;grid-template-columns:90px 1fr 140px;gap:0;align-items:start;" id="avrow-${ds}">
       <!-- Date -->
       <div style="padding:10px 8px">
@@ -3761,18 +4039,14 @@ R['my-avail']=function(){
       <div style="padding:10px 8px;border-left:1px solid var(--border)">
         ${shiftsHtml}
       </div>
-      <!-- My selection -->
+      <!-- My selection (multi-select) -->
       <div style="padding:8px;border-left:1px solid var(--border);position:relative" class="pop-wrap">
-        <span class="avail-chip ${chipCls}" id="avchip-${ds}" onclick="openAvPop('${ds}',this)" style="width:100%;justify-content:center;font-size:.76rem">
-          ${isLate?'🌙 ':''}${chipLabel}
-        </span>
+        <div class="avail-chip-strip" id="avchips-${ds}" onclick="openAvPop('${ds}',this)" style="display:flex;flex-wrap:wrap;gap:3px;justify-content:center;cursor:pointer;min-height:26px;align-items:center">${_availChipsHtml(ds)}</div>
         <div class="pop below" id="avpop-${ds}" style="display:none;min-width:200px;right:0;left:auto">
-          <div class="pop-header">${DAYS[d.getDay()]} ${MONTHS[d.getMonth()]} ${d.getDate()}</div>
-          ${popItems}
+          <div class="pop-header">${DAYS[d.getDay()]} ${MONTHS[d.getMonth()]} ${d.getDate()}<div style="font-size:.62rem;font-weight:400;color:var(--muted);text-transform:none">Tap to add/remove — you can pick more than one</div></div>
+          <div id="avopts-${ds}">${_availPopItemsHtml(ds)}</div>
         </div>
-        ${st==='S_SPEC'?`<div id="avspecial-${ds}" style="margin-top:4px">${renderSpecialDetail(ds,avEntry)}</div>`:
-          (st==='FIXED_OFF'||st==='FLEX_OFF')?`<div id="avspecial-${ds}" style="margin-top:4px">${renderOffDetail(ds,avEntry)}</div>`:
-          `<div id="avspecial-${ds}"></div>`}
+        <div id="avspecial-${ds}" style="margin-top:4px">${_availDetailHtml(ds)}</div>
       </div>
     </div>`;
   }).join('');
@@ -3841,8 +4115,8 @@ function openAvPop(ds,chipEl){
   pop.style.zIndex='9999';
 
   requestAnimationFrame(()=>{
-    // Position relative to the chip element
-    const chip=document.getElementById(`avchip-${ds}`);
+    // Position relative to the chip strip
+    const chip=document.getElementById(`avchips-${ds}`);
     const anchor = chip || chipEl;
     if(!anchor){pop.style.display='none';return;}
     const rect=anchor.getBoundingClientRect();
@@ -3881,6 +4155,123 @@ function getAvailView() {
   if (!availCache[availViewPeriodId]) availCache[availViewPeriodId] = [];
   return availCache[availViewPeriodId];
 }
+// Shifts for the period whose availability is being edited (drives shift options /
+// event availability like Mega/Tourney). Mirrors getAvailView() but for shifts.
+function getAvailShifts() {
+  const pid = availViewPeriodId;
+  if (!pid || pid === D.activePeriod?.id) return D.shifts;
+  return schedShiftCache[pid] || [];   // undefined-until-loaded; populated by ensureAvailShifts
+}
+// Ensure the viewed availability period's shifts are loaded. Returns true when ready;
+// otherwise kicks off a fetch + re-render (cb) and returns false.
+function ensureAvailShifts(cb) {
+  const pid = availViewPeriodId;
+  if (!pid || pid === D.activePeriod?.id) return true;            // D.shifts already loaded
+  if (schedShiftCache[pid] !== undefined) return true;
+  run('clientGetShifts', r=>{ schedShiftCache[pid] = r||[]; cb&&cb(); }, ()=>{ schedShiftCache[pid] = []; cb&&cb(); }, pid);
+  return false;
+}
+// ── Per-day availability set model (multi-select) ──
+// availChanges[ds] is an ARRAY of pending entry objects = the complete intended
+// set for that date. Absent → fall back to saved rows. Empty array → cleared day.
+function _myGid(){ return String(myId()); }
+function _savedDayRows(ds, viewArr){ return (viewArr||getAvailView()).filter(a=>String(a.guard_id)===_myGid()&&a.date===ds); }
+function _normRow(ds, r, st){
+  return {guard_id:myId(),date:ds,status:st,
+    custom_start:st==='S_SPEC'?(r.custom_start||''):'',
+    custom_end:st==='S_SPEC'?(r.custom_end||''):'',
+    ot_willing:false,
+    notes:(st==='S_SPEC'||avIsOff(st))?(r.notes&&r.notes!=='guard_flex'?r.notes:''):''};
+}
+// Effective entry objects for a date (pending change overrides saved; legacy combos expanded).
+function dayEntries(ds, changes, viewArr){
+  const ch = changes||availChanges;
+  if(ch[ds]) return ch[ds];
+  const out=[];
+  _savedDayRows(ds, viewArr).forEach(r=>avExpand(r.status).forEach(st=>out.push(_normRow(ds, r, st))));
+  return out;
+}
+function dayStatuses(ds, changes, viewArr){ return dayEntries(ds, changes, viewArr).map(e=>e.status); }
+// Find a specific status's entry within today's pending set (creating the pending set if needed).
+function _ensurePendingDay(ds){ if(!availChanges[ds]) availChanges[ds]=dayEntries(ds).map(e=>({...e})); return availChanges[ds]; }
+function _dayEntryFor(ds,status){ return dayEntries(ds).find(e=>e.status===status)||null; }
+
+// Ordered availability options offered for a date: base six + one per flagged
+// (offer_in_availability) template that has a non-cancelled shift that day.
+function availOptionsFor(ds){
+  const dayShifts=getAvailShifts().filter(s=>s.date===ds&&s.status!=='cancelled');
+  const has=code=>dayShifts.some(s=>s.template_code===code);
+  const opts=[
+    {status:'S_8HR',   dim:!has('8HR')},
+    {status:'S_LS',    dim:!has('LS')},
+    {status:'S_CADET', dim:false},
+    {status:'S_SPEC',  dim:false},
+  ];
+  const seen={};
+  dayShifts.forEach(s=>{
+    if(!s.template_code||seen[s.template_code])return; seen[s.template_code]=1;
+    const t=D.templates.find(x=>x.code===s.template_code);
+    if(t&&t.offer_in_availability) opts.push({status:'S_T_'+t.code, dim:false, event:true});
+  });
+  opts.push({status:'FLEX_OFF',off:true},{status:'FIXED_OFF',off:true});
+  return opts;
+}
+
+// Toggle a status in a day's set. Working statuses stack; Off is exclusive.
+function toggleDayStatus(ds,status){
+  let entries=_ensurePendingDay(ds).map(e=>({...e}));
+  if(avIsOff(status)){
+    const already=entries.length===1&&entries[0].status===status;
+    const prevNote=entries.find(e=>e.status===status)?.notes||'';
+    entries=already?[]:[{guard_id:myId(),date:ds,status,custom_start:'',custom_end:'',ot_willing:false,notes:prevNote}];
+  } else {
+    entries=entries.filter(e=>!avIsOff(e.status)); // choosing a working option clears any off
+    const idx=entries.findIndex(e=>e.status===status);
+    if(idx>=0) entries.splice(idx,1);
+    else entries.push({guard_id:myId(),date:ds,status,custom_start:'',custom_end:'',ot_willing:false,notes:''});
+  }
+  availChanges[ds]=entries;
+  _refreshAvailRow(ds);
+  _bumpAvailStatusMsg();
+  updateAvailHoursCounter();
+  const row=document.getElementById(`avrow-${ds}`);
+  if(row){row.style.outline='2px solid var(--wave)';setTimeout(()=>row.style.outline='',800);}
+}
+// Inner HTML for the per-day chip strip (one chip per selected status).
+function _availChipsHtml(ds){
+  const sts=dayStatuses(ds);
+  if(!sts.length) return `<span class="avail-chip av-none" style="font-size:.76rem">Set availability</span>`;
+  return sts.map(st=>`<span class="avail-chip" style="${avChipStyle(st)};font-size:.72rem">${avIsLate(st)?'🌙 ':''}${avLabel(st)}</span>`).join('');
+}
+// Inner HTML for the popover option list (multi-select toggles).
+function _availPopItemsHtml(ds){
+  const sel={}; dayStatuses(ds).forEach(s=>sel[s]=1);
+  return availOptionsFor(ds).map(o=>{
+    const on=!!sel[o.status], dim=o.dim&&!on;
+    return `<div class="pop-item${on?' selected':''}" onclick="event.stopPropagation();toggleDayStatus('${ds}','${o.status}')" style="${dim?'opacity:.55':''}">
+      <span class="pop-swatch" style="background:${avColor(o.status)}"></span>
+      ${avIsLate(o.status)?'🌙 ':''}${avLabel(o.status)}${dim?` <span class="muted" style="font-size:.68rem">no slots yet</span>`:''}${on?' ✓':''}
+    </div>`;
+  }).join('');
+}
+// Inner HTML for the special-hours / off-note detail under a day.
+function _availDetailHtml(ds){
+  const sts=dayStatuses(ds);
+  if(sts.indexOf('S_SPEC')>=0) return renderSpecialDetail(ds,_dayEntryFor(ds,'S_SPEC'));
+  const off=sts.find(s=>avIsOff(s));
+  if(off) return renderOffDetail(ds,_dayEntryFor(ds,off));
+  return '';
+}
+function _refreshAvailRow(ds){
+  const chips=document.getElementById(`avchips-${ds}`); if(chips) chips.innerHTML=_availChipsHtml(ds);
+  const opts=document.getElementById(`avopts-${ds}`); if(opts) opts.innerHTML=_availPopItemsHtml(ds);
+  const det=document.getElementById(`avspecial-${ds}`); if(det) det.innerHTML=_availDetailHtml(ds);
+}
+function _bumpAvailStatusMsg(){
+  const n=Object.keys(availChanges).length;
+  const msg=n>0?`${n} unsaved change${n!==1?'s':''}…`:'';
+  ['avail-save-status','avail-save-status2'].forEach(id=>{const el=document.getElementById(id);if(el)el.textContent=msg;});
+}
 function _renderHrsCounter(weekMap, wdMap) {
   const weeks = Object.keys({...weekMap, ...wdMap}).sort();
   if (!weeks.length) return '<span style="color:var(--muted)">Reg. hrs: 0/40 · 0/5 days</span>';
@@ -3898,7 +4289,7 @@ function updateAvailHoursCounter() {
   if (!el) return;
   const vp = D.periods.find(p => p.id === availViewPeriodId) || D.activePeriod;
   if (!vp) return;
-  const effMap = getEffectiveAvailMap(vp, availChanges);
+  const effMap = getEffectiveAvailSets(vp, availChanges);
   el.innerHTML = _renderHrsCounter(countRegularHrs(effMap), countWorkingDaysPerWeek(effMap));
 }
 function updateMobAvailHoursCounter() {
@@ -3906,58 +4297,8 @@ function updateMobAvailHoursCounter() {
   if (!el) return;
   const vp = D.periods.find(p => p.id === availViewPeriodId) || D.activePeriod;
   if (!vp) return;
-  const effMap = getEffectiveAvailMap(vp, mobAvailChanges);
+  const effMap = getEffectiveAvailSets(vp, mobAvailChanges);
   el.innerHTML = _renderHrsCounter(countRegularHrs(effMap), countWorkingDaysPerWeek(effMap));
-}
-
-function setMyAvail(ds,status){
-  event.stopPropagation();
-  document.querySelectorAll('[id^="avpop-"]').forEach(p=>p.style.display='none');
-  activeAvPop=null;
-
-  // Update chip UI immediately
-  const chip=document.getElementById(`avchip-${ds}`);
-  if(chip){
-    chip.className=`avail-chip av-${status}`;
-    chip.innerHTML=`● ${AV_LABELS[status]}`;
-  }
-
-  // Track change — S_8HR_LS saves two rows
-  const existing=getAvailView().find(a=>String(a.guard_id)===String(myId())&&a.date===ds);
-  if(status==='S_8HR_LS'){
-    availChanges[ds]={guard_id:myId(),date:ds,status:'S_8HR',custom_start:'',custom_end:'',ot_willing:false,notes:''};
-    availChanges[ds+'_lso']={guard_id:myId(),date:ds,status:'S_LS',custom_start:'',custom_end:'',ot_willing:false,notes:''};
-  } else {
-    // Remove any LS companion row if switching away
-    delete availChanges[ds+'_lso'];
-    const isOff=status==='FIXED_OFF'||status==='FLEX_OFF';
-    const existingNote=existing?.notes&&existing.notes!=='guard_flex'?existing.notes:'';
-    availChanges[ds]={guard_id:myId(),date:ds,status,
-      custom_start:status==='S_SPEC'?(existing?.custom_start||''):'',
-      custom_end:status==='S_SPEC'?(existing?.custom_end||''):'',
-      ot_willing:status==='S_8HR_OT',
-      notes:(status==='S_SPEC'||isOff)?existingNote:''};
-  }
-
-  // Show or clear detail inputs
-  const specDiv=document.getElementById(`avspecial-${ds}`);
-  if(specDiv){
-    if(status==='S_SPEC') showSpecialDetail(ds);
-    else if(status==='FIXED_OFF'||status==='FLEX_OFF') showOffDetail(ds);
-    else specDiv.innerHTML='';
-  }
-
-  // Flash the row
-  const row=document.getElementById(`avrow-${ds}`);
-  if(row){row.style.outline='2px solid var(--wave)';setTimeout(()=>row.style.outline='',1000);}
-
-  const n=Object.keys(availChanges).length;
-  const msg=n>0?`${n} unsaved change${n!==1?'s':''}…`:'';
-  ['avail-save-status','avail-save-status2'].forEach(id=>{
-    const el=document.getElementById(id);
-    if(el)el.textContent=msg;
-  });
-  updateAvailHoursCounter();
 }
 
 function renderSpecialDetail(ds, avEntry) {
@@ -3977,49 +4318,30 @@ function renderSpecialDetail(ds, avEntry) {
   </div>`;
 }
 
-function showSpecialDetail(ds){
-  const container=document.getElementById(`avspecial-${ds}`);
-  if(!container)return;
-  if(container.querySelector('.special-detail'))return;
-  container.innerHTML=renderSpecialDetail(ds, availChanges[ds]);
-}
-
 function renderOffDetail(ds, avEntry) {
   const noteVal = avEntry?.notes && avEntry.notes !== 'guard_flex' ? avEntry.notes : '';
   return `<div style="margin-top:6px">
     <input type="text" id="off-note-${ds}" class="inp" placeholder="Note (optional)" value="${noteVal}" style="width:100%;max-width:260px;padding:3px 6px;font-size:.76rem" oninput="updateOff('${ds}')">
   </div>`;
 }
-function showOffDetail(ds){
-  const container=document.getElementById(`avspecial-${ds}`);
-  if(!container)return;
-  container.innerHTML=renderOffDetail(ds, availChanges[ds]);
+// Set a field on the day's entry matching `status` (creating the pending day from saved if needed).
+function _setDayEntryField(ds, status, field, val){
+  const entries=_ensurePendingDay(ds);
+  let e=entries.find(x=>x.status===status);
+  if(!e){ e={guard_id:myId(),date:ds,status,custom_start:'',custom_end:'',ot_willing:false,notes:''}; entries.push(e); }
+  e[field]=val;
 }
 function updateOff(ds){
-  if(!availChanges[ds])return;
-  availChanges[ds].notes=document.getElementById(`off-note-${ds}`)?.value||'';
-  const n=Object.keys(availChanges).length;
-  ['avail-save-status','avail-save-status2'].forEach(id=>{
-    const el=document.getElementById(id);if(el)el.textContent=n?`${n} unsaved change${n!==1?'s':''}…`:'';
-  });
+  const off=dayStatuses(ds).find(s=>avIsOff(s)); if(!off)return;
+  _setDayEntryField(ds, off, 'notes', document.getElementById(`off-note-${ds}`)?.value||'');
+  _bumpAvailStatusMsg();
 }
-
 function updateSpecial(ds){
-  if(!availChanges[ds]){
-    // Guard editing times on an already-saved S_SPEC entry — create the pending change now
-    const existing=getAvailView().find(a=>String(a.guard_id)===String(myId())&&a.date===ds);
-    if(!existing||existing.status!=='S_SPEC')return;
-    availChanges[ds]={guard_id:myId(),date:ds,status:'S_SPEC',
-      custom_start:existing.custom_start||'',custom_end:existing.custom_end||'',
-      ot_willing:false,notes:existing.notes||''};
-  }
-  availChanges[ds].custom_start=document.getElementById(`sp-in-${ds}`)?.value||'';
-  availChanges[ds].custom_end=document.getElementById(`sp-out-${ds}`)?.value||'';
-  availChanges[ds].notes=document.getElementById(`sp-note-${ds}`)?.value||'';
-  const n=Object.keys(availChanges).length;
-  ['avail-save-status','avail-save-status2'].forEach(id=>{
-    const el=document.getElementById(id);if(el)el.textContent=n?`${n} unsaved change${n!==1?'s':''}…`:'';
-  });
+  _setDayEntryField(ds,'S_SPEC','custom_start',document.getElementById(`sp-in-${ds}`)?.value||'');
+  _setDayEntryField(ds,'S_SPEC','custom_end',document.getElementById(`sp-out-${ds}`)?.value||'');
+  _setDayEntryField(ds,'S_SPEC','notes',document.getElementById(`sp-note-${ds}`)?.value||'');
+  _bumpAvailStatusMsg();
+  updateAvailHoursCounter();
 }
 
 function _availPolicyModal(saveFn){
@@ -4042,9 +4364,17 @@ function _availPolicyModal(saveFn){
 }
 function saveMyAvail(force){
   const _vp=D.periods.find(p=>p.id===availViewPeriodId)||D.activePeriod;
-  const _effMap=getEffectiveAvailMap(_vp,availChanges);
-  const entries=Object.values(availChanges);
-  if(!entries.length){toast('No changes to save.','warn');return;}
+  const _effMap=getEffectiveAvailSets(_vp,availChanges);
+  const changedDates=Object.keys(availChanges);
+  if(!changedDates.length){toast('No changes to save.','warn');return;}
+  // Flatten the per-day sets into rows; a cleared day sends an empty-status sentinel
+  // so the backend deletes that day's prior rows.
+  const entries=[];
+  changedDates.forEach(ds=>{
+    const arr=availChanges[ds];
+    if(!arr.length) entries.push({guard_id:myId(),date:ds,status:'',custom_start:'',custom_end:'',ot_willing:false,notes:''});
+    else arr.forEach(e=>entries.push(e));
+  });
 
   // Block save if any S_SPEC entry is missing start or end time
   const specNoTimes=entries.filter(e=>e.status==='S_SPEC'&&(!e.custom_start||!e.custom_end));
@@ -4076,12 +4406,12 @@ function saveMyAvail(force){
     // Re-enable all buttons
     allBtns.forEach(b=>{b.disabled=false;b.innerHTML='💾 Save Availability';});
     if(r&&r.success){
-      toast(`Saved ${entries.length} day${entries.length!==1?'s':''}!`,'ok');
+      toast(`Saved ${changedDates.length} day${changedDates.length!==1?'s':''}!`,'ok');
+      // Mirror the backend's per-day replace: drop each changed day's prior rows, re-add the set.
       const _viewArr=getAvailView();
-      entries.forEach(e=>{
-        const idx=_viewArr.findIndex(a=>String(a.guard_id)===String(e.guard_id)&&a.date===e.date);
-        if(idx>=0)_viewArr[idx]={..._viewArr[idx],...e};
-        else _viewArr.push(e);
+      changedDates.forEach(ds=>{
+        for(let i=_viewArr.length-1;i>=0;i--){ if(String(_viewArr[i].guard_id)===_myGid()&&_viewArr[i].date===ds) _viewArr.splice(i,1); }
+        availChanges[ds].forEach(e=>{ if(e.status) _viewArr.push({...e}); });
       });
       availChanges={};
       ['avail-save-status','avail-save-status2'].forEach(id=>{
@@ -4220,7 +4550,10 @@ function changeSchedPeriod(pid,panel){
   const isNext=pid===D.nextPeriod?.id;
   let pending=0;
   const done=()=>{ if(--pending===0) R[panel](); };
-  if(!isActive&&!schedShiftCache[pid]){ pending++; run('clientGetShifts',r=>{schedShiftCache[pid]=r||[];done();},null,pid); }
+  if(!isActive&&!schedShiftCache[pid]){ pending++;
+    if(isTrueAdmin()) arun('clientGetShiftsAdmin',r=>{schedShiftCache[pid]=r||[];done();},null,pid);
+    else run('clientGetShifts',r=>{schedShiftCache[pid]=r||[];done();},null,pid);
+  }
   if(panel==='my-schedule'&&!isActive&&!(isNext?D.availNext:availCache[pid])){ pending++; run('clientGetAvailability',r=>{if(isNext)D.availNext=r||[];else availCache[pid]=r||[];done();},null,pid); }
   if(pending===0) R[panel]();
 }
@@ -4290,7 +4623,7 @@ function renderFsPost(el){
     const guardIds=[...new Set(postShifts.map(s=>String(s.assigned_guard_id)))];
     if(!guardIds.length) return;
     const postGuards=guardIds.map(gid=>D.guards.find(g=>String(g.id)===gid)).filter(Boolean)
-      .sort((a,b)=>rankIdx(a.rank)-rankIdx(b.rank));
+      .sort((a,b)=>rankIdx(a.rank)-rankIdx(b.rank)||guardTiebreak(a,b));
     const pc=post.color||'#2176ae';
     const ptc=postTextColor(pc);
     tb+=`<tr><td colspan="${dates.length+1}" style="background:${pc};color:${ptc};padding:5px 12px;font-family:'Barlow Condensed',sans-serif;font-size:.9rem;font-weight:700;letter-spacing:.5px;position:sticky;left:0">${post.name.toUpperCase()}</td></tr>`;
@@ -4372,7 +4705,7 @@ function renderFsCondensed(el){
   const weekShifts=assigned.filter(s=>s.date>=week.sat&&s.date<=week.fri);
   const guardIds=[...new Set(weekShifts.map(s=>String(s.assigned_guard_id)))];
   const guards=guardIds.map(gid=>D.guards.find(g=>String(g.id)===gid)).filter(Boolean)
-    .sort((a,b)=>rankIdx(a.rank)-rankIdx(b.rank));
+    .sort((a,b)=>rankIdx(a.rank)-rankIdx(b.rank)||guardTiebreak(a,b));
 
   // Header
   let th=`<tr>
@@ -4517,11 +4850,102 @@ R['shifts']=function(){
         <label class="flex items-c gap2" style="font-size:.83rem"><input type="checkbox" id="smgr-open" onchange="renderShiftMgr()"> Open only</label>
       </div>
     </div>
+    <div class="card" id="tmpl-card" style="padding:0;overflow:hidden;margin-bottom:12px"></div>
     <div class="card" style="padding:0;overflow:hidden">
       <div id="smgr-table">Loading…</div>
     </div>`;
+  renderTemplatesCard();
   renderShiftMgr();
 };
+
+// ── Shift Templates management (offer-in-availability flag + CRUD) ──
+function renderTemplatesCard(){
+  const el=document.getElementById('tmpl-card'); if(!el)return;
+  const rows=(D.templates||[]).slice().sort((a,b)=>String(a.name).localeCompare(String(b.name))).map(t=>{
+    const isBase=['8HR','LS','CADET','SPEC'].includes(t.code);
+    const times=t.start_time&&t.start_time!=='TBD'?`${fmtTime(t.start_time)}–${fmtTime(t.end_time)}`:'—';
+    return `<tr style="border-top:1px solid var(--border)">
+      <td style="padding:6px 10px;font-weight:700">${_esc(t.code)}</td>
+      <td style="padding:6px 10px">${_esc(t.name||'')}</td>
+      <td style="padding:6px 10px;color:var(--muted);font-size:.8rem;white-space:nowrap">${times}</td>
+      <td style="padding:6px 10px;color:var(--muted);font-size:.8rem">${t.paid_hours||0}h</td>
+      <td style="padding:6px 10px;text-align:center"><input type="checkbox" ${t.offer_in_availability?'checked':''} onchange="toggleTemplateAvail('${_esc(t.code)}',this.checked)" title="Offer as an availability option on dates this template is scheduled"></td>
+      <td style="padding:6px 10px;text-align:right;white-space:nowrap">
+        <button class="btn btn-outline btn-sm" onclick="showTemplateModal('${_esc(t.code)}')">Edit</button>
+        ${isBase?'':`<button class="btn btn-coral btn-sm" onclick="deleteTemplateRow('${_esc(t.code)}')" title="Delete template">✕</button>`}
+      </td>
+    </tr>`;
+  }).join('');
+  el.innerHTML=`
+    <div style="padding:12px 14px;display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid var(--border)">
+      <div class="card-title" style="margin:0">🗂 Shift Templates</div>
+      <button class="btn btn-navy btn-sm" onclick="showTemplateModal()">+ Add Template</button>
+    </div>
+    <div style="overflow:auto">
+      <table style="width:100%;border-collapse:collapse;font-size:.85rem">
+        <thead><tr style="background:var(--foam);text-align:left">
+          <th style="padding:6px 10px">Code</th><th style="padding:6px 10px">Name</th>
+          <th style="padding:6px 10px">Hours</th><th style="padding:6px 10px">Paid</th>
+          <th style="padding:6px 10px;text-align:center">Offer in availability</th><th></th>
+        </tr></thead>
+        <tbody>${rows||'<tr><td colspan="6" style="padding:12px;color:var(--muted)">No templates.</td></tr>'}</tbody>
+      </table>
+    </div>`;
+}
+function toggleTemplateAvail(code,on){
+  arun('clientSetTemplateAvailFlag',r=>{
+    if(r&&r.success){ const t=D.templates.find(x=>x.code===code); if(t)t.offer_in_availability=on?true:''; toast('Updated.','ok'); }
+    else { toast(r?.message||'Failed to update.','err'); renderTemplatesCard(); }
+  },()=>{toast('Failed to update.','err');renderTemplatesCard();},code,on);
+}
+function showTemplateModal(code){
+  const t=code?D.templates.find(x=>x.code===code):null;
+  const isBase=code&&['8HR','LS','CADET','SPEC'].includes(code);
+  showModal(`
+    <div class="modal-title">${t?'Edit Template':'Add Template'}</div>
+    <div class="fg"><label>Code</label><input id="tm-code" class="inp" value="${t?_esc(t.code):''}" ${t?'disabled':''} placeholder="e.g. MEGA4" maxlength="12"></div>
+    <div class="fg"><label>Name</label><input id="tm-name" class="inp" value="${t?_esc(t.name||''):''}" placeholder="e.g. July 4th Mega Shift"></div>
+    <div class="flex gap2">
+      <div class="fg" style="flex:1"><label>Start</label><input id="tm-start" class="inp" value="${t?_esc(t.start_time||''):''}" placeholder="6:00 PM"></div>
+      <div class="fg" style="flex:1"><label>End</label><input id="tm-end" class="inp" value="${t?_esc(t.end_time||''):''}" placeholder="8:30 PM"></div>
+    </div>
+    <div class="flex gap2">
+      <div class="fg" style="flex:1"><label>Paid hours</label><input id="tm-hours" class="inp" type="number" step="0.25" value="${t?(t.paid_hours||0):0}"></div>
+      <div class="fg" style="flex:1"><label>Break (min)</label><input id="tm-break" class="inp" type="number" value="${t?(t.break_minutes||0):0}"></div>
+    </div>
+    <label class="flex items-c gap2" style="font-size:.86rem;margin:4px 0 12px"><input type="checkbox" id="tm-offer" ${t&&t.offer_in_availability?'checked':''}> Offer as an availability option</label>
+    <div class="modal-foot">
+      <button class="btn btn-ghost" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-navy" onclick="saveTemplateModal(${t?`'${_esc(code)}'`:'null'})">Save</button>
+    </div>${isBase?'<div style="font-size:.72rem;color:var(--muted);margin-top:6px">Base template — code cannot be changed or deleted.</div>':''}`);
+}
+function saveTemplateModal(code){
+  const fields={
+    name:document.getElementById('tm-name')?.value?.trim()||'',
+    start_time:document.getElementById('tm-start')?.value?.trim()||'TBD',
+    end_time:document.getElementById('tm-end')?.value?.trim()||'TBD',
+    paid_hours:parseFloat(document.getElementById('tm-hours')?.value||'0')||0,
+    break_minutes:parseInt(document.getElementById('tm-break')?.value||'0')||0,
+    offer_in_availability:document.getElementById('tm-offer')?.checked?true:''
+  };
+  const done=r=>{
+    if(r&&r.success){ toast('Saved.','ok'); closeModal(); run('clientGetTemplates',res=>{D.templates=res||[];renderTemplatesCard();}); }
+    else toast(r?.message||'Failed to save template.','err');
+  };
+  if(code){ arun('clientUpdateTemplate',done,null,code,fields); }
+  else {
+    const newCode=document.getElementById('tm-code')?.value?.trim().toUpperCase()||'';
+    if(!newCode){toast('Code is required.','err');return;}
+    arun('clientAddTemplate',done,null,{code:newCode,...fields});
+  }
+}
+function deleteTemplateRow(code){
+  if(!confirm(`Delete template "${code}"? This cannot be undone.`))return;
+  arun('clientDeleteTemplate',r=>{
+    if(r&&r.success){ toast('Deleted.','ok'); run('clientGetTemplates',res=>{D.templates=res||[];renderTemplatesCard();}); }
+    else toast(r?.message||'Failed to delete.','err');
+  },null,code);
+}
 
 function renderShiftMgr(){
   const el=document.getElementById('smgr-table');if(!el)return;
@@ -4540,7 +4964,8 @@ function renderShiftMgr(){
   // Consolidate identical open/floating shifts into groups
   const openGroups={};
   shifts.filter(s=>s.status==='open'||s.status==='floating').forEach(s=>{
-    const key=`${s.date}|${s.post_id}|${s.template_code}`;
+    // Include custom times in the key so specials with different hours don't merge.
+    const key=`${s.date}|${s.post_id}|${s.template_code}|${s.custom_start||''}|${s.custom_end||''}`;
     if(!openGroups[key]) openGroups[key]={date:s.date,post_id:s.post_id,template_code:s.template_code,shifts:[]};
     openGroups[key].shifts.push(s);
   });
@@ -4569,7 +4994,7 @@ function renderShiftMgr(){
     rows.push({date:grp.date,html:`<tr>
       <td>${fd(grp.date)}</td>
       <td>${p?`<span style="color:${pc};font-weight:600">${p.name}</span>`:'—'}</td>
-      <td><span style="background:${pc}22;color:${pc};padding:2px 7px;border-radius:4px;font-size:.75rem;font-weight:700">${t?t.name:grp.template_code||'—'}</span></td>
+      <td><span style="background:${pc}22;color:${pc};padding:2px 7px;border-radius:4px;font-size:.75rem;font-weight:700">${t?t.name:grp.template_code||'—'}</span>${grp.template_code==='SPEC'&&(s0.custom_start||s0.custom_end)?`<div style="font-size:.72rem;color:var(--muted);margin-top:2px">${fmtTime(s0.custom_start)}–${fmtTime(s0.custom_end)}</div>`:''}</td>
       <td><span class="badge b-open">open</span>${n>1?`<span style="margin-left:5px;font-size:.75rem;font-weight:700;color:var(--muted)">×${n}</span>`:''}</td>
       <td style="font-size:.83rem">—</td>
       <td style="font-size:.75rem;color:var(--muted)">${hasSeries?'🔄 Series':'—'}</td>
@@ -4585,7 +5010,7 @@ function renderShiftMgr(){
     rows.push({date:s.date,html:`<tr>
       <td>${fd(s.date)}</td>
       <td>${p?`<span style="color:${pc};font-weight:600">${p.name}</span>`:'—'}</td>
-      <td><span style="background:${pc}22;color:${pc};padding:2px 7px;border-radius:4px;font-size:.75rem;font-weight:700">${t?t.name:s.template_code||'—'}</span></td>
+      <td><span style="background:${pc}22;color:${pc};padding:2px 7px;border-radius:4px;font-size:.75rem;font-weight:700">${t?t.name:s.template_code||'—'}</span>${s.template_code==='SPEC'&&(s.custom_start||s.custom_end)?`<div style="font-size:.72rem;color:var(--muted);margin-top:2px">${fmtTime(s.custom_start)}–${fmtTime(s.custom_end)}</div>`:''}</td>
       <td><span class="badge b-${s.status==='filled'?'approved':'pending'}">${s.status}</span></td>
       <td style="font-size:.83rem">${g?`<span class="rank-dot" style="background:${RC[g.rank]||'#94a3b8'};width:6px;height:6px;display:inline-block;border-radius:50%;margin-right:3px;vertical-align:middle"></span>${g.name}`:'—'}</td>
       <td style="font-size:.75rem;color:var(--muted)">${s.series_id?'🔄 Series':'—'}</td>
@@ -4610,7 +5035,7 @@ function renderShiftMgr(){
 function doDeleteShift(id){
   if(!confirm('Delete this shift?'))return;
   arun('clientCancelShift',()=>{toast('Deleted.','warn');
-    run('clientGetShifts',r=>{D.shifts=r||[];renderShiftMgr();},null,D.activePeriod.id);
+    arun('clientGetShiftsAdmin',r=>{D.shifts=r||[];renderShiftMgr();},null,D.activePeriod.id);
   },null,id);
 }
 
@@ -4622,7 +5047,7 @@ function doDeleteShifts(idsStr){
     arun('clientCancelShift',()=>{
       if(--remaining===0){
         toast(`Deleted ${ids.length} shifts.`,'warn');
-        run('clientGetShifts',r=>{D.shifts=r||[];renderShiftMgr();},null,D.activePeriod.id);
+        arun('clientGetShiftsAdmin',r=>{D.shifts=r||[];renderShiftMgr();},null,D.activePeriod.id);
       }
     },null,id);
   });
@@ -4738,6 +5163,13 @@ function overlayClick(e){
 
 const RANKS=['Lifeguard Supervisor','Crew Captain','Captain','Beach Captain','Lieutenant','Vet','Guard','Rookie','Replacement','Volunteer','Cadet'];
 
+// Seniority tiebreak used within the same rank when listing guards:
+// more years of service first, then last name, then first name.
+// (Function declaration — hoisted, so callable from earlier sort sites.)
+function guardYOS(g){ const n=parseFloat(g&&g.years_service); return isNaN(n)?-1:n; }
+function guardNameKey(g){ const p=String(g&&g.name||'').trim().split(/\s+/); return ((p.length>1?p[p.length-1]:(p[0]||''))+' '+(p[0]||'')).toLowerCase(); }
+function guardTiebreak(a,b){ return guardYOS(b)-guardYOS(a) || guardNameKey(a).localeCompare(guardNameKey(b)); }
+
 function showAddShiftModal(){
   if(!D.activePeriod){toast('No active period.','err');return;}
   smgrActiveFq='weekly';
@@ -4756,8 +5188,12 @@ function showAddShiftModal(){
       <div class="fg"><label>Post</label><select id="s-post" class="sel">${D.posts.map(p=>`<option value="${p.id}">${p.name}</option>`).join('')}</select></div>
     </div>
     <div class="row2">
-      <div class="fg"><label>Template</label><select id="s-tmpl" class="sel">${D.templates.map(t=>`<option value="${t.code}">${t.name} (${fmtTime(t.start_time)}–${fmtTime(t.end_time)})</option>`).join('')}</select></div>
+      <div class="fg"><label>Template</label><select id="s-tmpl" class="sel" onchange="onSmgrTmplChange(this.value)">${D.templates.map(t=>`<option value="${t.code}">${t.name} (${fmtTime(t.start_time)}–${fmtTime(t.end_time)})</option>`).join('')}</select></div>
       <div class="fg"><label>Slots</label><input type="number" id="s-qty" class="inp" value="1" min="1" max="50"></div>
+    </div>
+    <div id="s-spec-times" class="row2" style="display:${D.templates[0]&&D.templates[0].code==='SPEC'?'flex':'none'}">
+      <div class="fg"><label>Start Time</label><input type="time" id="s-spec-start" class="inp"></div>
+      <div class="fg"><label>End Time</label><input type="time" id="s-spec-end" class="inp"></div>
     </div>
     <div class="row2">
       <div class="fg"><label>Slot Type</label><select id="s-type" class="sel"><option value="open">Open</option><option value="floating">Floating</option></select></div>
@@ -4807,6 +5243,10 @@ function showAddShiftModal(){
 function toggleRepeat(checked){
   document.getElementById('s-recur-wrap').style.display=checked?'block':'none';
 }
+function onSmgrTmplChange(code){
+  const w=document.getElementById('s-spec-times');
+  if(w) w.style.display=code==='SPEC'?'flex':'none';
+}
 function smgrFreqTab(freq){
   smgrActiveFq=freq;
   ['daily','weekly','monthly'].forEach(f=>{
@@ -4841,6 +5281,14 @@ function smgrMonMode(mode){
 function doCreateShift(btn){
   const date=document.getElementById('s-date').value;
   if(!date){toast('Select a date.','err');return;}
+  const tmplCode=document.getElementById('s-tmpl').value;
+  let specStart='',specEnd='';
+  if(tmplCode==='SPEC'){
+    specStart=document.getElementById('s-spec-start')?.value||'';
+    specEnd=document.getElementById('s-spec-end')?.value||'';
+    if(!specStart||!specEnd){toast('Set start and end times for the special shift.','err');return;}
+    if(specEnd<=specStart){toast('End time must be after start time.','err');return;}
+  }
   const qty=parseInt(document.getElementById('s-qty')?.value)||1;
   const slotType=document.getElementById('s-type').value;
   const repeat=document.getElementById('s-repeat')?.checked;
@@ -4883,7 +5331,8 @@ function doCreateShift(btn){
     }
   },null,{pay_period_id:D.activePeriod.id,date,
     post_id:document.getElementById('s-post').value,
-    template_code:document.getElementById('s-tmpl').value,
+    template_code:tmplCode,
+    custom_start:specStart,custom_end:specEnd,
     type,quantity:qty,
     recur_freq:recurFreq,recur_through:recurThrough,
     recur_days:recurDays,recur_month_mode:recurMonthMode,
@@ -4903,12 +5352,14 @@ function showAddGuardModal(){
       <div class="fg"><label>Rank</label><select id="g-rank" class="sel">${RANKS.map(r=>`<option>${r}</option>`).join('')}</select></div>
     </div>
     <div class="row2">
+      <div class="fg"><label>Years of Service</label><input type="number" id="g-yos" class="inp" inputmode="numeric" min="0" step="1" placeholder="e.g. 3"></div>
       <div class="fg"><label>Pay Rate ($/hr)</label><div style="position:relative;display:flex;align-items:center"><input type="password" id="g-rate" class="inp" inputmode="decimal" style="padding-right:36px"><button type="button" onclick="togglePayRate('g-rate','g-rate-eye')" id="g-rate-eye" style="position:absolute;right:8px;background:none;border:none;cursor:pointer;color:var(--muted);font-size:1rem;line-height:1;padding:4px" title="Show/hide pay rate">👁</button></div></div>
       <div class="fg"><label>Auth</label><select id="g-auth" class="sel" onchange="document.getElementById('g-pw-w').style.display=this.value==='password'?'block':'none'">
         <option value="google">Google</option><option value="password">Password</option>
       </select></div>
     </div>
     <div class="fg" id="g-pw-w" style="display:none"><label>Temp Password</label><input type="text" id="g-pw" class="inp"></div>
+    <div class="fg"><label>Preferred Post</label><select id="g-pref-post" class="sel"><option value="">— None —</option>${D.posts.map(p=>`<option value="${p.id}">${p.name}</option>`).join('')}</select></div>
     <div class="fg"><label>Post Eligibility</label><div style="margin-top:6px;border:1px solid var(--border);border-radius:8px;overflow:hidden">${pChecks||'<p class="muted" style="padding:8px">Add posts first.</p>'}</div></div>
     <div class="modal-foot"><button class="btn btn-outline" onclick="closeModal()">Cancel</button><button class="btn btn-navy" onclick="doCreateGuard()">Add Guard</button></div>`);
 }
@@ -4920,8 +5371,9 @@ function doCreateGuard(){
     if(r&&r.success){toast('Guard added!','ok');closeModal();run('clientGetGuards',d=>{D.guards=d||[];R.guards();});}
     else toast(r?.message||'Failed.','err');
   },null,{name,email,phone:document.getElementById('g-phone').value,rank:document.getElementById('g-rank').value,
-    pay_rate:document.getElementById('g-rate').value,auth_type:document.getElementById('g-auth').value,
-    temp_password:document.getElementById('g-pw')?.value||'',post_eligibility:posts});
+    pay_rate:document.getElementById('g-rate').value,years_service:document.getElementById('g-yos')?.value||'',auth_type:document.getElementById('g-auth').value,
+    temp_password:document.getElementById('g-pw')?.value||'',post_eligibility:posts,
+    preferred_post:document.getElementById('g-pref-post')?.value||''});
 }
 function showEditGuardModal(id){
   const g=D.guards.find(x=>x.id===id);if(!g)return;
@@ -4934,11 +5386,15 @@ function showEditGuardModal(id){
       <div class="fg"><label>Phone</label><input type="tel" id="eg-phone" class="inp" value="${g.phone||''}"></div>
       <div class="fg"><label>Rank</label><select id="eg-rank" class="sel">${RANKS.map(r=>`<option${r===g.rank?' selected':''}>${r}</option>`).join('')}</select></div>
     </div>
-    <div class="fg"><label>Pay Rate ($/hr)</label><div style="position:relative;display:flex;align-items:center"><input type="password" id="eg-rate" class="inp" inputmode="decimal" value="${g.pay_rate||''}" style="padding-right:36px"><button type="button" onclick="togglePayRate('eg-rate','eg-rate-eye')" id="eg-rate-eye" style="position:absolute;right:8px;background:none;border:none;cursor:pointer;color:var(--muted);font-size:1rem;line-height:1;padding:4px" title="Show/hide pay rate">👁</button></div></div>
+    <div class="row2">
+      <div class="fg"><label>Years of Service</label><input type="number" id="eg-yos" class="inp" inputmode="numeric" min="0" step="1" value="${g.years_service||''}"></div>
+      <div class="fg"><label>Pay Rate ($/hr)</label><div style="position:relative;display:flex;align-items:center"><input type="password" id="eg-rate" class="inp" inputmode="decimal" value="${g.pay_rate||''}" style="padding-right:36px"><button type="button" onclick="togglePayRate('eg-rate','eg-rate-eye')" id="eg-rate-eye" style="position:absolute;right:8px;background:none;border:none;cursor:pointer;color:var(--muted);font-size:1rem;line-height:1;padding:4px" title="Show/hide pay rate">👁</button></div></div>
+    </div>
     <div class="row2">
       <div class="fg"><label>Locker #</label><input type="text" id="eg-locker" class="inp" value="${g.locker_number||''}"></div>
       <div class="fg"><label>Parking Pass #</label><input type="text" id="eg-parking" class="inp" value="${g.parking_pass||''}"></div>
     </div>
+    <div class="fg"><label>Preferred Post</label><select id="eg-pref-post" class="sel"><option value="">— None —</option>${D.posts.map(p=>`<option value="${p.id}"${String(g.preferred_post)===String(p.id)?' selected':''}>${p.name}</option>`).join('')}</select></div>
     <div class="modal-foot"><button class="btn btn-outline" onclick="closeModal()">Cancel</button><button id="eg-save-btn" class="btn btn-navy" onclick="doUpdateGuard('${id}')">Save</button></div>`);
 }
 function doUpdateGuard(id){
@@ -4950,8 +5406,10 @@ function doUpdateGuard(id){
   },null,{id,name:document.getElementById('eg-name').value,email:document.getElementById('eg-email').value,
     phone:document.getElementById('eg-phone').value,rank:document.getElementById('eg-rank').value,
     pay_rate:document.getElementById('eg-rate').value,
+    years_service:document.getElementById('eg-yos')?.value||'',
     locker_number:document.getElementById('eg-locker').value,
-    parking_pass:document.getElementById('eg-parking').value});
+    parking_pass:document.getElementById('eg-parking').value,
+    preferred_post:document.getElementById('eg-pref-post')?.value||''});
 }
 function rankCheckboxes(selectedCSV){
   const sel=(selectedCSV||'').split(',').map(r=>r.trim()).filter(Boolean);
@@ -5230,13 +5688,27 @@ function doPublishWeek(){
   if(btn){btn.disabled=true;btn.innerHTML='<span class="spinner"></span> Sending…';}
   if(cancel)cancel.disabled=true;
   arun('clientPublishWeek',r=>{
-    if(r&&r.success){toast(`Sent to ${r.sent} guard${r.sent!==1?'s':''}${r.skipped?` · ${r.skipped} skipped (no email)`:''}.`,'ok');closeModal();}
+    if(r&&r.success){toast(`Published & sent to ${r.sent} guard${r.sent!==1?'s':''}${r.skipped?` · ${r.skipped} skipped (no email)`:''}.`,'ok');closeModal();reloadShifts();}
     else{if(btn){btn.disabled=false;btn.textContent='Send';}if(cancel)cancel.disabled=false;toast(r?.message||'Failed.','err');}
   },()=>{if(btn){btn.disabled=false;btn.textContent='Send';}if(cancel)cancel.disabled=false;toast('Connection error.','err');},
     D.activePeriod.id,PW_WEEK,recipient);
 }
+function doUnpublishWeek(ws){
+  if(!confirm(`Unpublish the week of ${fds(ws)}?\n\nGuards will no longer see this week (it returns to draft) until you publish it again.`))return;
+  arun('clientSetWeekPublished',r=>{
+    if(r&&r.success){toast('Week unpublished — hidden from guards.','warn');reloadShifts();}
+    else toast(r?.message||'Failed.','err');
+  },()=>toast('Connection error.','err'),ws,false);
+}
+function doDiscardWeek(ws){
+  if(!confirm(`Discard ALL shifts for the week of ${fds(ws)}?\n\nThis deletes the draft assignments for that week (availability requests are kept). This cannot be undone.`))return;
+  arun('clientClearWeek',r=>{
+    if(r&&r.success){toast(`Discarded ${r.removed} shift${r.removed===1?'':'s'}.`,'warn');reloadShifts();}
+    else toast(r?.message||'Failed.','err');
+  },()=>toast('Connection error.','err'),ws);
+}
 function doLockPeriod(id){if(!confirm('Lock this pay period?'))return;arun('clientLockPeriod',()=>{toast('Period locked.','ok');run('clientGetPeriods',d=>{D.periods=d||[];R.periods();});},null,id);}
-function viewPeriod(id){D.activePeriod=D.periods.find(p=>p.id===id);run('clientGetShifts',r=>{D.shifts=r||[];go('full-schedule-admin');},null,id);}
+function viewPeriod(id){D.activePeriod=D.periods.find(p=>p.id===id);arun('clientGetShiftsAdmin',r=>{D.shifts=r||[];loadWeekStates(id);go('full-schedule-admin');},null,id);}
 function doSetConfig(key){const v=document.getElementById(`cfg-${key}`)?.value;arun('clientSetConfig',r=>{if(r?.success)toast(`Saved: ${key}`,'ok');},null,key,v);}
 
 // ══════════════════════════════════════════
@@ -5254,7 +5726,8 @@ function reloadShifts(){
     else if(PANEL==='dashboard') R.dashboard();
     else if(PANEL==='shifts') renderShiftMgr();
   };
-  run('clientGetShifts',r=>{D.shifts=r||[];shiftsLoaded=true;tryRender();},null,pid);
+  if(isTrueAdmin()){ arun('clientGetShiftsAdmin',r=>{D.shifts=r||[];shiftsLoaded=true;tryRender();},null,pid); loadWeekStates(pid); }
+  else run('clientGetShifts',r=>{D.shifts=r||[];shiftsLoaded=true;tryRender();},null,pid);
   run('clientGetWeeklySummary',h=>{D.weeklyHours=h||{};hoursLoaded=true;tryRender();},null,pid);
 }
 function reloadRequests(){run('clientGetPendingRequests',r=>{D.pendingReqs=r||[];refreshBadges();if(PANEL==='requests')R.requests();else if(PANEL==='dashboard')R.dashboard();});}
@@ -5377,9 +5850,10 @@ function renderMobGuardDash() {
   const mine = myMergedShifts(gid);
   const todayShifts = mine.filter(s => s.date === today);
   const upcoming = mine.filter(s => s.date > today); // today's shifts live in the Today section above
+  const _upcomingDates=new Set(upcoming.map(s=>s.date)); // a shift wins over a day-off on the same date
   const _mobAllOffSeen=new Set();
   const _mobAllOff=[...(D.avail||[]),...(D.availNext||[])].filter(a=>{
-    if(!(String(a.guard_id)===gid&&a.date>=today&&a.status==='FIXED_OFF'))return false;
+    if(!(String(a.guard_id)===gid&&a.date>=today&&!_upcomingDates.has(a.date)&&a.status==='FIXED_OFF'))return false;
     if(_mobAllOffSeen.has(a.date))return false;
     _mobAllOffSeen.add(a.date);return true;
   });
@@ -5420,6 +5894,7 @@ function renderMobGuardDash() {
     </div>` : ''}
     ${tideCardHtml()}
     ${weatherCardHtml()}
+    ${cacheHuntCardHtml()}
     ${recentBadgesCardHtml()}
     <div style="font-family:'Barlow Condensed',sans-serif;font-size:.82rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:7px;display:flex;align-items:center;justify-content:space-between">
       <span>My Shifts (${upcoming.length})</span>
@@ -5487,7 +5962,7 @@ function renderMobMySchedule() {
           </div>
           <div class="g-shift-info">
             ${infoHtml}
-            ${avSt ? `<div style="margin-top:3px"><span style="background:${AV_COLORS[avSt]}22;color:${AV_COLORS[avSt]};padding:2px 8px;border-radius:10px;font-size:.72rem;font-weight:700">${AV_LATE.has(avSt)?'🌙 ':''}${AV_LABELS[avSt]}</span></div>` : ''}
+            ${avSt && !hasShift ? `<div style="margin-top:3px"><span style="background:${AV_COLORS[avSt]}22;color:${AV_COLORS[avSt]};padding:2px 8px;border-radius:10px;font-size:.72rem;font-weight:700">${AV_LATE.has(avSt)?'🌙 ':''}${AV_LABELS[avSt]}</span></div>` : ''}
           </div>
           <div class="g-shift-expand">▼</div>
         </div>
@@ -5528,6 +6003,8 @@ function renderMobMyAvail() {
     run('clientGetAvailability', r=>{ availCache[availViewPeriodId]=r||[]; renderMobMyAvail(); }, null, availViewPeriodId);
     return;
   }
+  // Ensure the viewed period's SHIFTS are loaded (drives shift/event options like Mega/Tourney).
+  if (!ensureAvailShifts(()=>renderMobMyAvail())) { el.innerHTML = '<p class="muted" style="padding:20px">Loading shifts…</p>'; return; }
 
   const viewPeriod = D.periods.find(p=>p.id===availViewPeriodId) || D.activePeriod;
   const viewAvail = getAvailView();
@@ -5551,19 +6028,14 @@ function renderMobMyAvail() {
     <div id="mob-av-list">
       ${dates.map(d => {
         const ds = ymd(d), hol = holiday(ds), we = isWE(ds), isT = ds===today;
-        const avEntry = viewAvail.find(a => String(a.guard_id)===gid && a.date===ds);
-        const st = avEntry ? avEntry.status : null;
         const rowBg = isT ? '#e0f2fe' : hol ? '#fffbeb' : we ? '#eef2f7' : '#fff';
-        const isLate = st && AV_LATE.has(st);
-        return `<div class="g-av-row" style="background:${rowBg}" onclick="openAvailSheet('${ds}','${st||''}')">
+        return `<div class="g-av-row" style="background:${rowBg}" onclick="openAvailSheet('${ds}')">
           <div class="g-av-date">
             <div class="g-av-day">${DAYS[d.getDay()]}</div>
             <div class="g-av-dnum">${MONTHS[d.getMonth()]} ${d.getDate()}</div>
             ${hol?`<div style="font-size:.62rem;color:#92400e">${hol}</div>`:''}
           </div>
-          ${st
-            ? `<span class="g-av-chip av-${st}">${isLate?'🌙 ':''}${AV_LABELS[st]}</span>`
-            : `<span class="g-av-chip g-av-none">Tap to set</span>`}
+          <div class="g-av-chipwrap" style="flex:1;display:flex;flex-wrap:wrap;gap:4px;align-items:center">${_mobChipsHtml(ds)}</div>
           <span class="g-av-arrow">›</span>
         </div>`;
       }).join('')}
@@ -5579,31 +6051,71 @@ function renderMobMyAvail() {
 
 // mobAvailChanges declared at top
 
-function openAvailSheet(ds, currentStatus) {
-  const dayShifts=D.shifts.filter(s=>s.date===ds&&s.status!=='cancelled');
-  const opts = Object.entries(AV_LABELS).map(([k,v]) => {
-    let hasMatch=true;
-    if(k==='S_8HR'||k==='S_8HR_OT') hasMatch=dayShifts.some(s=>s.template_code==='8HR');
-    else if(k==='S_LS8') hasMatch=dayShifts.some(s=>s.template_code==='LS8');
-    else if(k==='S_LS') hasMatch=dayShifts.some(s=>s.template_code==='LS');
-    else if(k==='S_SPEC') hasMatch=dayShifts.some(s=>s.template_code==='SPEC');
-    const isOff=['FLEX_OFF','FIXED_OFF'].includes(k);
-    const disabled=!isOff&&!hasMatch;
-    // Always clickable — dim if no slots but don't block
-    return `<button class="av-opt-btn${currentStatus===k?' selected':''}" onclick="setMobAvail('${ds}','${k}')" style="${disabled?'opacity:.55':''}">
-      <div class="av-opt-dot" style="background:${AV_COLORS[k]}"></div>
-      <div class="av-opt-label">${AV_LATE.has(k)?'🌙 ':''}${v}${disabled?' <span style="font-size:.68rem;color:var(--muted)">— no slots yet</span>':''}</div>
-      ${currentStatus===k?'<div class="av-opt-check">✓</div>':''}
+// Mobile per-day helpers (mirror the desktop set model, backed by mobAvailChanges).
+function _mobEnsureDay(ds){ if(!mobAvailChanges[ds]) mobAvailChanges[ds]=dayEntries(ds, mobAvailChanges).map(e=>({...e})); return mobAvailChanges[ds]; }
+function _mobChipsHtml(ds){
+  const sts=dayStatuses(ds, mobAvailChanges);
+  if(!sts.length) return `<span class="g-av-chip g-av-none">Tap to set</span>`;
+  return sts.map(st=>`<span class="g-av-chip" style="${avChipStyle(st)};flex:0 1 auto">${avIsLate(st)?'🌙 ':''}${avLabel(st)}</span>`).join('');
+}
+function _mobUpdateRowChips(ds){
+  const rows=document.getElementById('mob-av-list'); if(!rows)return;
+  const row=rows.querySelector(`[onclick*="'${ds}'"]`); if(!row)return;
+  const holder=row.querySelector('.g-av-chipwrap'); if(holder) holder.innerHTML=_mobChipsHtml(ds);
+}
+function _mobAfterToggle(ds){
+  _mobUpdateRowChips(ds);
+  const statusEl=document.getElementById('mob-av-status');
+  if(statusEl)statusEl.textContent=`${Object.keys(mobAvailChanges).length} unsaved change${Object.keys(mobAvailChanges).length!==1?'s':''}`;
+  updateMobAvailHoursCounter();
+}
+// Toggle a status in a day's mobile set. Working statuses stack; Off / Special open a follow-up sheet.
+function mobToggleStatus(ds, status){
+  const gid=String(myId());
+  if(status==='S_SPEC'){
+    let entries=_mobEnsureDay(ds).filter(e=>!avIsOff(e.status)).map(e=>({...e}));
+    if(!entries.find(e=>e.status==='S_SPEC')) entries.push({guard_id:gid,date:ds,status:'S_SPEC',custom_start:'',custom_end:'',ot_willing:false,notes:''});
+    mobAvailChanges[ds]=entries;
+    openSpecialTimeSheet(ds);
+    return;
+  }
+  if(avIsOff(status)){
+    const cur=_mobEnsureDay(ds);
+    const already=cur.length===1&&cur[0].status===status;
+    if(already){ mobAvailChanges[ds]=[]; _mobAfterToggle(ds); openAvailSheet(ds); return; }
+    mobAvailChanges[ds]=[{guard_id:gid,date:ds,status,custom_start:'',custom_end:'',ot_willing:false,notes:cur.find(e=>e.status===status)?.notes||''}];
+    openOffNoteSheet(ds,status);
+    return;
+  }
+  let entries=_mobEnsureDay(ds).filter(e=>!avIsOff(e.status)).map(e=>({...e}));
+  const idx=entries.findIndex(e=>e.status===status);
+  if(idx>=0) entries.splice(idx,1);
+  else entries.push({guard_id:gid,date:ds,status,custom_start:'',custom_end:'',ot_willing:false,notes:''});
+  mobAvailChanges[ds]=entries;
+  _mobAfterToggle(ds);
+  openAvailSheet(ds); // re-render sheet to reflect the new selection
+}
+
+function openAvailSheet(ds) {
+  const sel={}; dayStatuses(ds, mobAvailChanges).forEach(s=>sel[s]=1);
+  const opts = availOptionsFor(ds).map(o => {
+    const k=o.status, on=!!sel[k], disabled=o.dim&&!on;
+    return `<button class="av-opt-btn${on?' selected':''}" onclick="mobToggleStatus('${ds}','${k}')" style="${disabled?'opacity:.55':''}">
+      <div class="av-opt-dot" style="background:${avColor(k)}"></div>
+      <div class="av-opt-label">${avIsLate(k)?'🌙 ':''}${avLabel(k)}${disabled?' <span style="font-size:.68rem;color:var(--muted)">— no slots yet</span>':''}</div>
+      ${on?'<div class="av-opt-check">✓</div>':''}
     </button>`;
   }).join('');
 
   const d = new Date(ds+'T12:00:00');
-  openBSheet(`${DAYS[d.getDay()]}, ${MONTHS[d.getMonth()]} ${d.getDate()}`, opts);
+  openBSheet(`${DAYS[d.getDay()]}, ${MONTHS[d.getMonth()]} ${d.getDate()}`,
+    opts + `<div style="font-size:.72rem;color:var(--muted);text-align:center;margin:10px 4px 4px">Pick more than one if you can work multiple shifts that day.</div>
+    <button class="btn btn-navy" style="width:100%;margin-top:4px" onclick="closeBSheet()">Done</button>`);
 }
 
 function openSpecialTimeSheet(ds){
-  const existing=getAvailView().find(a=>String(a.guard_id)===String(myId())&&a.date===ds);
-  const pending=mobAvailChanges[ds]?.[0];
+  const pending=(mobAvailChanges[ds]||[]).find(e=>e.status==='S_SPEC');
+  const existing=getAvailView().find(a=>String(a.guard_id)===String(myId())&&a.date===ds&&a.status==='S_SPEC');
   const inVal=pending?.custom_start||existing?.custom_start||'';
   const outVal=pending?.custom_end||existing?.custom_end||'';
   const noteVal=pending?.notes||existing?.notes||'';
@@ -5638,20 +6150,16 @@ function confirmMobSpecial(ds){
     else{const el=document.getElementById(`mob-sp-out-${ds}`);if(el){el.style.outline='2px solid var(--coral)';el.focus();}}
     return;
   }
-  mobAvailChanges[ds]=[{guard_id:gid,date:ds,status:'S_SPEC',custom_start:inVal,custom_end:outVal,ot_willing:false,notes:noteVal}];
-  const rows=document.getElementById('mob-av-list');
-  if(rows){
-    const row=rows.querySelector(`[onclick*="'${ds}'"]`);
-    if(row){const chip=row.querySelector('.g-av-chip');if(chip){chip.className='g-av-chip av-S_SPEC';chip.innerHTML=AV_LABELS['S_SPEC'];}}
-  }
-  const statusEl=document.getElementById('mob-av-status');
-  if(statusEl)statusEl.textContent=`${Object.keys(mobAvailChanges).length} unsaved change${Object.keys(mobAvailChanges).length!==1?'s':''}`;
-  updateMobAvailHoursCounter();
+  // Merge the special entry into the day's set (keep any other working selections).
+  let entries=_mobEnsureDay(ds).filter(e=>!avIsOff(e.status)&&e.status!=='S_SPEC').map(e=>({...e}));
+  entries.push({guard_id:gid,date:ds,status:'S_SPEC',custom_start:inVal,custom_end:outVal,ot_willing:false,notes:noteVal});
+  mobAvailChanges[ds]=entries;
+  _mobAfterToggle(ds);
   closeBSheet();
 }
 
 function openOffNoteSheet(ds, status){
-  const pending=mobAvailChanges[ds]?.[0];
+  const pending=(mobAvailChanges[ds]||[]).find(e=>e.status===status);
   const noteVal=pending?.notes||'';
   const d=new Date(ds+'T12:00:00');
   const label=status==='FLEX_OFF'?'Flex Day Off':'Day Off';
@@ -5667,74 +6175,27 @@ function openOffNoteSheet(ds, status){
   );
 }
 function confirmMobOff(ds, skipNote){
+  const status=(mobAvailChanges[ds]||[]).find(e=>avIsOff(e.status))?.status;
   if(!skipNote){
     const noteVal=document.getElementById(`mob-off-note-${ds}`)?.value||'';
-    if(mobAvailChanges[ds]?.[0]) mobAvailChanges[ds][0].notes=noteVal;
+    const e=(mobAvailChanges[ds]||[]).find(x=>x.status===status);
+    if(e) e.notes=noteVal;
   }
-  const status=mobAvailChanges[ds]?.[0]?.status;
-  const rows=document.getElementById('mob-av-list');
-  if(rows){
-    const row=rows.querySelector(`[onclick*="'${ds}'"]`);
-    if(row){const chip=row.querySelector('.g-av-chip');if(chip&&status){chip.className=`g-av-chip av-${status}`;chip.innerHTML=AV_LABELS[status];}}
-  }
-  const statusEl=document.getElementById('mob-av-status');
-  if(statusEl)statusEl.textContent=`${Object.keys(mobAvailChanges).length} unsaved change${Object.keys(mobAvailChanges).length!==1?'s':''}`;
-  updateMobAvailHoursCounter();
-  closeBSheet();
-}
-
-function setMobAvail(ds, status) {
-  const gid = String(myId());
-  const existing = getAvailView().find(a => String(a.guard_id)===gid && a.date===ds);
-
-  // S_SPEC needs time input — close status sheet and open time sheet
-  if(status==='S_SPEC'){
-    // Pre-set the pending entry so openSpecialTimeSheet can read it
-    mobAvailChanges[ds]=[{guard_id:gid,date:ds,status:'S_SPEC',custom_start:existing?.custom_start||'',custom_end:existing?.custom_end||'',ot_willing:false,notes:existing?.notes||''}];
-    openSpecialTimeSheet(ds);
-    return;
-  }
-
-  // Day Off / Flex Day Off — open note sheet (note is optional)
-  if(status==='FIXED_OFF'||status==='FLEX_OFF'){
-    const existingNote=existing?.notes&&existing.notes!=='guard_flex'?existing.notes:'';
-    const pendingNote=mobAvailChanges[ds]?.[0]?.notes||existingNote;
-    mobAvailChanges[ds]=[{guard_id:gid,date:ds,status,custom_start:'',custom_end:'',ot_willing:false,notes:pendingNote}];
-    openOffNoteSheet(ds,status);
-    return;
-  }
-
-  // LS10 = both LS8 and LS
-  const entries = status === 'S_LS10'
-    ? [{guard_id:gid,date:ds,status:'S_LS8',custom_start:'',custom_end:'',ot_willing:false,notes:''},
-       {guard_id:gid,date:ds+'_lso',status:'S_LS',custom_start:'',custom_end:'',ot_willing:false,notes:''}]
-    : [{guard_id:gid,date:ds,status,custom_start:'',custom_end:'',ot_willing:false,notes:''}];
-
-  mobAvailChanges[ds] = entries;
-
-  // Update UI row immediately
-  const rows = document.getElementById('mob-av-list');
-  if (rows) {
-    const row = rows.querySelector(`[onclick*="'${ds}'"]`);
-    if (row) {
-      const chip = row.querySelector('.g-av-chip');
-      if (chip) {
-        chip.className = `g-av-chip av-${status}`;
-        chip.innerHTML = (AV_LATE.has(status)?'🌙 ':'')+AV_LABELS[status];
-      }
-    }
-  }
-  const statusEl = document.getElementById('mob-av-status');
-  if (statusEl) statusEl.textContent = `${Object.keys(mobAvailChanges).length} unsaved change${Object.keys(mobAvailChanges).length!==1?'s':''}`;
-  updateMobAvailHoursCounter();
+  _mobAfterToggle(ds);
   closeBSheet();
 }
 
 function saveMobAvail(force) {
   const _vp=D.periods.find(p=>p.id===availViewPeriodId)||D.activePeriod;
-  const _effMap=getEffectiveAvailMap(_vp,mobAvailChanges);
-  const allEntries = Object.values(mobAvailChanges).flat();
-  if (!allEntries.length) { toast('No changes to save.','warn'); return; }
+  const _effMap=getEffectiveAvailSets(_vp,mobAvailChanges);
+  const changedDates=Object.keys(mobAvailChanges);
+  if (!changedDates.length) { toast('No changes to save.','warn'); return; }
+  const allEntries=[];
+  changedDates.forEach(ds=>{
+    const arr=mobAvailChanges[ds];
+    if(!arr.length) allEntries.push({guard_id:myId(),date:ds,status:'',custom_start:'',custom_end:'',ot_willing:false,notes:''});
+    else arr.forEach(e=>allEntries.push(e));
+  });
 
   // Block save if any S_SPEC entry is missing start or end time
   const _specNoTimes=allEntries.filter(e=>e.status==='S_SPEC'&&(!e.custom_start||!e.custom_end));
@@ -5763,9 +6224,9 @@ function saveMobAvail(force) {
     if (r && r.success) {
       toast('Availability saved!','ok');
       const _mViewArr = getAvailView();
-      allEntries.forEach(e => {
-        const idx = _mViewArr.findIndex(a => String(a.guard_id)===String(e.guard_id) && a.date===e.date);
-        if (idx>=0) _mViewArr[idx] = {..._mViewArr[idx],...e}; else _mViewArr.push(e);
+      changedDates.forEach(ds=>{
+        for(let i=_mViewArr.length-1;i>=0;i--){ if(String(_mViewArr[i].guard_id)===_myGid()&&_mViewArr[i].date===ds) _mViewArr.splice(i,1); }
+        mobAvailChanges[ds].forEach(e=>{ if(e.status) _mViewArr.push({...e}); });
       });
       mobAvailChanges = {};
       const statusEl = document.getElementById('mob-av-status');
@@ -5863,7 +6324,7 @@ function _fsMobDayCardHtml(d, assigned, today, showEmpty){
       postShifts.sort((a,b)=>{
         const ga=D.guards.find(g=>String(g.id)===String(a.assigned_guard_id));
         const gb=D.guards.find(g=>String(g.id)===String(b.assigned_guard_id));
-        return rankIdx(ga?.rank)-rankIdx(gb?.rank);
+        return rankIdx(ga?.rank)-rankIdx(gb?.rank)||guardTiebreak(ga||{},gb||{});
       }).forEach(s => {
         const g = D.guards.find(x=>String(x.id)===String(s.assigned_guard_id));
         const t = D.templates.find(x=>x.code===s.template_code);
@@ -6684,6 +7145,27 @@ function loadMyTimeRecords(periodId) {
   }
 }
 
+// Guard was auto-clocked-out last shift and must correct it before clocking in again.
+// Reuses the getr-* edit form + saveGuardEditTime; the correction sets edited='true',
+// which clears the server-side clock-in block.
+function showAutoCoFixModal(r) {
+  const dateStr = r.date;
+  const cin  = r.clock_in  ? new Date(r.clock_in).toTimeString().slice(0,5)  : '';
+  const cout = r.clock_out ? new Date(r.clock_out).toTimeString().slice(0,5) : '';
+  showModal(`<div class="modal-title">⚠️ Correct Your Last Clock-Out</div>
+    <p class="muted" style="font-size:.82rem;margin-bottom:12px">You were automatically clocked out on <strong>${fd(dateStr)}</strong> because no clock-out was recorded. Please fix that clock-out time before clocking in again.</p>
+    <div class="row2">
+      <div class="fg"><label>Clock In</label><input type="time" id="getr-in" class="inp" value="${cin}"></div>
+      <div class="fg"><label>Clock Out</label><input type="time" id="getr-out" class="inp" value="${cout}"></div>
+    </div>
+    <div class="fg"><label>Break (minutes)</label><input type="number" id="getr-break" class="inp" value="${parseInt(r.break_minutes)||0}"></div>
+    <div class="fg"><label>Notes / Reason</label><input type="text" id="getr-notes" class="inp" placeholder="e.g. Actually left at 7:15pm" value="${(r.notes||'').replace(/"/g,'&quot;')}"></div>
+    <div class="modal-foot">
+      <button class="btn btn-outline" onclick="closeModal()">Later</button>
+      <button class="btn btn-navy" onclick="saveGuardEditTime('${r.id}','${dateStr}')">Save Correction</button>
+    </div>`);
+}
+
 // Guard self-edit of a completed time record
 function showGuardEditTime(id, dateStr) {
   const el = document.getElementById('my-time-records');
@@ -6704,7 +7186,7 @@ function showGuardEditTime(id, dateStr) {
       <div class="fg"><label>Notes / Reason for edit</label><input type="text" id="getr-notes" class="inp" placeholder="e.g. Forgot to clock out at 5pm" value="${r.notes||''}"></div>
       <div class="modal-foot">
         <button class="btn btn-outline" onclick="closeModal()">Cancel</button>
-        <button class="btn btn-navy" onclick="saveGuardEditTime('${id}','${dateStr}')">Save</button>
+        <button class="btn btn-navy" id="getr-save" onclick="saveGuardEditTime('${id}','${dateStr}')">Save</button>
       </div>`);
   }, null, D.activePeriod?.id);
 }
@@ -6726,14 +7208,26 @@ function saveGuardEditTime(id, dateStr) {
   const clockOut = toISO(outVal);
   const totalMins = Math.max(0, Math.round((new Date(clockOut)-new Date(clockIn))/60000) - breakVal);
 
+  const saveBtn = document.getElementById('getr-save');
+  if (saveBtn) {
+    if (saveBtn.disabled) return; // guard against double-tap
+    saveBtn.disabled = true;
+    saveBtn.innerHTML = '<span class="spinner"></span> Saving…';
+  }
+
   // Use clientEditTimeRecord but guard version — we need a guard-safe server call
   runG('clientGuardEditTimeRecord', r => {
     if (r&&r.success) {
       toast('Time record updated — marked as edited.','ok');
       closeModal();
       if (D.activePeriod) loadMyTimeRecords(D.activePeriod.id);
-    } else toast(r?.message||'Failed.','err');
-  }, null, { id, clock_in: clockIn, clock_out: clockOut, break_minutes: breakVal, notes });
+    } else {
+      toast(r?.message||'Failed.','err');
+      if (saveBtn) { saveBtn.disabled = false; saveBtn.innerHTML = 'Save'; }
+    }
+  }, () => {
+    if (saveBtn) { saveBtn.disabled = false; saveBtn.innerHTML = 'Save'; }
+  }, { id, clock_in: clockIn, clock_out: clockOut, break_minutes: breakVal, notes });
 }
 
 function guardDeleteTime(id) {
@@ -6841,7 +7335,12 @@ function doClockAction() {
             toast('Clocked in! Have a great shift 🌊', 'ok');
             if (PANEL === 'time') renderTimePage(document.getElementById('content'));
             else refreshClockWidget();
+            if (isJuly4Today()) playJuly4Celebration();
           }
+        } else if (r && r.needs_auto_co_fix && r.record && !IMPERSONATE) {
+          // Guard was auto-clocked-out last shift — must correct it before clocking in.
+          if (btn) { btn.disabled = false; btn.innerHTML = '🟢 Clock In'; }
+          showAutoCoFixModal(r.record);
         } else {
           toast(r?.message || 'Clock-in failed.', 'err');
           if (btn) { btn.disabled = false; btn.innerHTML = '🟢 Clock In'; }
@@ -6850,6 +7349,109 @@ function doClockAction() {
     });
   }
 }
+
+// ── JULY 4 EASTER EGG ──
+// Fireworks burst, then an American flag waves across the screen.
+// Plays automatically the first time a guard clocks in on July 4.
+// Test from the browser console with: testJuly4()
+function isJuly4Today() {
+  const d = new Date();
+  return d.getMonth() === 6 && d.getDate() === 4;
+}
+
+function playJuly4Celebration() {
+  if (document.getElementById('july4-overlay')) return; // already playing
+
+  // Inject keyframes
+  const style = document.createElement('style');
+  style.id = 'july4-style';
+  style.textContent = `
+    @keyframes j4-flag-fly { 0%{transform:translateX(-130vw) rotate(-2deg);} 100%{transform:translateX(130vw) rotate(2deg);} }
+    @keyframes j4-wave { 0%,100%{transform:skewY(-2.5deg);} 50%{transform:skewY(2.5deg);} }
+    @keyframes j4-fade { from{opacity:0;} to{opacity:1;} }
+    @keyframes j4-textpop { 0%{opacity:0;transform:scale(.6);} 60%{opacity:1;transform:scale(1.08);} 100%{opacity:1;transform:scale(1);} }
+    #july4-overlay{position:fixed;inset:0;z-index:99999;background:radial-gradient(circle at center,#0b1c44 0%,#05070f 100%);overflow:hidden;cursor:wait;animation:j4-fade .25s ease;}
+    #july4-overlay canvas{position:absolute;inset:0;width:100%;height:100%;}
+    #july4-flagwrap{position:absolute;top:50%;left:0;margin-top:-110px;animation:j4-flag-fly 4.2s ease-in-out 2.6s forwards;}
+    #july4-flag{width:340px;height:210px;border-radius:4px;box-shadow:0 14px 40px rgba(0,0,0,.6);
+      background:repeating-linear-gradient(#b22234 0 16.15px,#fff 16.15px 32.3px);
+      animation:j4-wave 1.1s ease-in-out infinite;transform-origin:left center;position:relative;}
+    #july4-flag::before{content:"";position:absolute;top:0;left:0;width:40%;height:113px;background-color:#3c3b6e;
+      background-image:radial-gradient(#fff 28%,transparent 30%);background-size:24px 22.6px;background-position:6px 6px;}
+    #july4-msg{position:absolute;left:0;right:0;bottom:14%;text-align:center;color:#fff;font-family:'Barlow Condensed',sans-serif;
+      font-size:2.1rem;font-weight:700;letter-spacing:2px;text-shadow:0 2px 12px rgba(0,0,0,.7);
+      opacity:0;animation:j4-textpop .8s ease 3.2s forwards;}
+  `;
+  document.head.appendChild(style);
+
+  const ov = document.createElement('div');
+  ov.id = 'july4-overlay';
+  ov.innerHTML = `
+    <canvas id="july4-canvas"></canvas>
+    <div id="july4-flagwrap"><div id="july4-flag"></div></div>
+    <div id="july4-msg">🎆 Happy 4th of July! 🎆</div>`;
+  document.body.appendChild(ov);
+
+  // Block interaction / keyboard so it can't be interrupted
+  const swallow = e => { e.stopPropagation(); e.preventDefault(); };
+  ['click','keydown','touchstart','touchmove','wheel'].forEach(ev =>
+    document.addEventListener(ev, swallow, { capture: true, passive: false }));
+
+  // Fireworks
+  const canvas = ov.querySelector('#july4-canvas');
+  const ctx = canvas.getContext('2d');
+  const dpr = window.devicePixelRatio || 1;
+  function resize() {
+    canvas.width = window.innerWidth * dpr;
+    canvas.height = window.innerHeight * dpr;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  }
+  resize();
+  window.addEventListener('resize', resize);
+
+  const colors = ['#ff4d4d', '#ffffff', '#5b86ff', '#ffd34d', '#ff7ad6'];
+  let particles = [];
+  function burst(x, y) {
+    const n = 70, color = colors[Math.floor(Math.random() * colors.length)];
+    for (let i = 0; i < n; i++) {
+      const a = (Math.PI * 2 * i) / n, sp = Math.random() * 4 + 2;
+      particles.push({ x, y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, life: 1,
+        color: Math.random() < .5 ? color : colors[Math.floor(Math.random() * colors.length)] });
+    }
+  }
+  let raf;
+  function frame() {
+    ctx.fillStyle = 'rgba(5,7,15,0.20)';
+    ctx.fillRect(0, 0, window.innerWidth, window.innerHeight);
+    for (const p of particles) {
+      p.vy += 0.045; p.x += p.vx; p.y += p.vy; p.life -= 0.011;
+      ctx.globalAlpha = Math.max(0, p.life);
+      ctx.fillStyle = p.color;
+      ctx.beginPath(); ctx.arc(p.x, p.y, 2.6, 0, 7); ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+    particles = particles.filter(p => p.life > 0);
+    raf = requestAnimationFrame(frame);
+  }
+  const W = window.innerWidth, H = window.innerHeight;
+  burst(W * 0.5, H * 0.4);
+  const burstTimer = setInterval(() =>
+    burst(W * (0.15 + Math.random() * 0.7), H * (0.12 + Math.random() * 0.45)), 420);
+  raf = requestAnimationFrame(frame);
+
+  // Cleanup after the full sequence (~7s)
+  setTimeout(() => {
+    clearInterval(burstTimer);
+    cancelAnimationFrame(raf);
+    window.removeEventListener('resize', resize);
+    ['click','keydown','touchstart','touchmove','wheel'].forEach(ev =>
+      document.removeEventListener(ev, swallow, { capture: true }));
+    ov.style.transition = 'opacity .6s ease';
+    ov.style.opacity = '0';
+    setTimeout(() => { ov.remove(); style.remove(); }, 650);
+  }, 7200);
+}
+window.testJuly4 = playJuly4Celebration;
 
 function showClockOutModal() {
   const now = new Date();
@@ -6869,7 +7471,7 @@ function showClockOutModal() {
       </div>
       <div class="fg">
         <label>Clock-Out Time</label>
-        <input type="time" id="co-time" class="inp" value="${nowVal}">
+        <input type="time" id="co-time" class="inp" value="${nowVal}" data-orig="${nowVal}">
       </div>
     </div>
     <div class="fg">
@@ -6899,13 +7501,19 @@ function confirmClockOut() {
   const status = IMPERSONATE ? IMPERSONATE_CLOCK_STATUS : CLOCK_STATUS;
   const rec = status.record;
 
-  // Clock-out override
-  let clockOutOverride = null;
+  // Always pin the clock-out to the exact minute shown in the box, captured
+  // here (before the geolocation wait below) so GPS/round-trip lag can't drift
+  // the punch past its target minute. clock_out_unedited tells the server this
+  // is the natural, unchanged punch (edited='false') so it can still earn the
+  // on-time badges; if the guard changed the time it's a real edit.
+  let clockOutOverride = null, clockOutUnedited = false;
+  const origOut = document.getElementById('co-time')?.dataset.orig;
   if (timeVal) {
     const [h,m] = timeVal.split(':').map(Number);
     const override = new Date(now);
     override.setHours(h, m, 0, 0);
     clockOutOverride = override.toISOString();
+    clockOutUnedited = (timeVal === origOut);
   }
 
   // Clock-in override — if user changed it from the original
@@ -6937,6 +7545,7 @@ function confirmClockOut() {
           CLOCK_STATUS = { clocked_in: false, record: null };
           toast(`Clocked out — ${hrs}h recorded 👋`, 'ok');
           loadPendingStats();
+          loadBadges(); // the just-completed shift may earn a badge (e.g. Freedom Isn't Free)
           if (PANEL === 'time') renderTimePage(document.getElementById('content'));
           else refreshClockWidget();
         }
@@ -6948,6 +7557,7 @@ function confirmClockOut() {
       lng: loc.lng,
       clock_in_override: clockInOverride,
       clock_out_override: clockOutOverride,
+      clock_out_unedited: clockOutUnedited,
       break_minutes: breakVal !== '' ? parseInt(breakVal)||0 : undefined,
       notes,
       target_guard_id: targetId,
@@ -6971,7 +7581,7 @@ function showAdminClockOutModal(guardId, guardName, clockInISO) {
       </div>
       <div class="fg">
         <label>Clock-Out Time</label>
-        <input type="time" id="co-time" class="inp" value="${nowVal}">
+        <input type="time" id="co-time" class="inp" value="${nowVal}" data-orig="${nowVal}">
       </div>
     </div>
     <div class="fg">
@@ -6996,11 +7606,16 @@ function confirmAdminClockOut(guardId, guardName, origClockInISO) {
   if (!timeVal) { toast('Clock-out time is required.','err'); return; }
 
   const now = new Date();
-  let clockOutOverride = null;
+  // Pin the clock-out to the exact minute shown in the box; clock_out_unedited
+  // flags whether the admin left it unchanged (a real punch that can earn the
+  // on-time badges) vs. actually adjusted it (a real edit).
+  let clockOutOverride = null, clockOutUnedited = false;
+  const origOut = document.getElementById('co-time')?.dataset.orig;
   if (timeVal) {
     const [h,m] = timeVal.split(':').map(Number);
     const d = new Date(now); d.setHours(h, m, 0, 0);
     clockOutOverride = d.toISOString();
+    clockOutUnedited = (timeVal === origOut);
   }
   let clockInOverride = null;
   if (inVal && origClockInISO) {
@@ -7027,6 +7642,7 @@ function confirmAdminClockOut(guardId, guardName, origClockInISO) {
   }, null, {
     clock_in_override: clockInOverride,
     clock_out_override: clockOutOverride,
+    clock_out_unedited: clockOutUnedited,
     break_minutes: breakVal !== '' ? parseInt(breakVal)||0 : undefined,
     notes,
     target_guard_id: guardId,
@@ -7448,6 +8064,7 @@ function renderAdminTimeDrill(guardId) {
     <div style="margin-bottom:12px;display:flex;gap:8px;align-items:center">
       <button class="btn btn-outline btn-sm" onclick="backToSummary()">← All Guards</button>
       <button class="btn btn-navy btn-sm" onclick="showAddManualTimeRecord('${guardId}')">+ Add Manual Record</button>
+      <button class="btn btn-wave btn-sm" onclick="showGuardTimeStats('${guardId}')">📊 Stats</button>
     </div>
     <div class="card" style="margin-bottom:12px;padding:12px 14px">
       <div class="flex items-c gap2" style="margin-bottom:${hasAnyProjected?'8':'0'}px">
@@ -7470,6 +8087,128 @@ function renderAdminTimeDrill(guardId) {
 function backToSummary() {
   _trDrillGuard = null;
   renderAdminTimeSummary();
+}
+
+// ── GUARD TIME STATS MODAL (all-time) ────────────────────────
+function showGuardTimeStats(guardId) {
+  const guard = D.guards.find(g => String(g.id) === String(guardId));
+  showModal(`<div class="modal-title">📊 ${guard?guard.name:'Guard'} — Time Stats</div>
+    <div class="muted" style="padding:24px 0;text-align:center">Loading all-time records…</div>`);
+  arun('clientGetGuardAllTimeRecords', recs => {
+    renderGuardTimeStats(guard, guardId, recs || []);
+  }, () => {
+    showModal(`<div class="modal-title">📊 Time Stats</div>
+      <p class="muted">Couldn't load records.</p>
+      <div class="modal-foot"><button class="btn btn-outline" onclick="closeModal()">Close</button></div>`);
+  }, guardId);
+}
+
+// Horizontal bar chart from [{label, value, sub}] — value drives bar width.
+function _statBars(items, color) {
+  const max = Math.max(1, ...items.map(i => i.value));
+  color = color || 'var(--wave)';
+  return items.map(i => {
+    const pct = Math.round(i.value / max * 100);
+    return `<div style="display:flex;align-items:center;gap:8px;margin:4px 0">
+      <div style="width:38px;font-size:.72rem;color:var(--muted);text-align:right;flex-shrink:0">${i.label}</div>
+      <div style="flex:1;background:var(--foam);border-radius:4px;height:15px;overflow:hidden">
+        <div style="width:${pct}%;height:100%;background:${color};border-radius:4px;min-width:${i.value>0?'3px':'0'}"></div>
+      </div>
+      <div style="width:56px;font-size:.72rem;text-align:right;font-weight:600;flex-shrink:0">${i.sub}</div>
+    </div>`;
+  }).join('');
+}
+
+function renderGuardTimeStats(guard, guardId, recs) {
+  const done = recs.filter(r => r.clock_out && toDateStr(r.date));
+  if (!done.length) {
+    showModal(`<div class="modal-title">📊 ${guard?guard.name:'Guard'} — Time Stats</div>
+      <div class="empty" style="padding:24px"><div class="ei">⏱</div><p>No completed time records yet.</p></div>
+      <div class="modal-foot"><button class="btn btn-outline" onclick="closeModal()">Close</button></div>`);
+    return;
+  }
+
+  // Per-record hours
+  const rows = done.map(r => ({ r, date: toDateStr(r.date), hrs: roundedMins(r) / 60 }));
+  const totalHours = rows.reduce((s, x) => s + x.hrs, 0);
+  const dates = [...new Set(rows.map(x => x.date))].sort();
+  const daysWorked = dates.length;
+  const avgPerDay = totalHours / daysWorked;
+  const longest = rows.reduce((a, b) => b.hrs > a.hrs ? b : a);
+  const firstDate = dates[0], lastDate = dates[dates.length - 1];
+
+  // All-time OT (weekly >40, Sat–Fri)
+  const wkMap = weeklyOTRecords(done);
+  let otTotal = 0, weeksWorked = 0;
+  Object.values(wkMap).forEach(w => { otTotal += w.ot; if (w.total > 0) weeksWorked++; });
+
+  // Hours by weekday (work-week order Sat→Fri)
+  const dowHours = [0,0,0,0,0,0,0]; // index by getDay
+  const dowCount = [0,0,0,0,0,0,0];
+  rows.forEach(x => { const d = new Date(x.date+'T12:00:00').getDay(); dowHours[d]+=x.hrs; dowCount[d]++; });
+  const dowOrder = [6,0,1,2,3,4,5];
+  const dowBars = _statBars(dowOrder.map(d => ({
+    label: DAYS[d], value: dowHours[d],
+    sub: dowHours[d]>0 ? dowHours[d].toFixed(1)+'h' : '—'
+  })));
+  const busiestDow = dowOrder.reduce((a,b) => dowHours[b] > dowHours[a] ? b : a, 6);
+
+  // Hours by month (chronological)
+  const monthMap = {};
+  rows.forEach(x => { const k = x.date.slice(0,7); monthMap[k] = (monthMap[k]||0) + x.hrs; });
+  const monthKeys = Object.keys(monthMap).sort();
+  const monthBars = _statBars(monthKeys.map(k => {
+    const [y,m] = k.split('-');
+    return { label: MONTHS[+m-1], value: monthMap[k], sub: monthMap[k].toFixed(1)+'h' };
+  }), 'var(--sun)');
+
+  // Average clock-in time-of-day (punctuality)
+  const inMins = done.filter(r => r.clock_in).map(r => { const d = new Date(r.clock_in); return d.getHours()*60 + d.getMinutes(); });
+  let avgInLabel = '—';
+  if (inMins.length) {
+    const avg = Math.round(inMins.reduce((s,m)=>s+m,0) / inMins.length);
+    const hh = Math.floor(avg/60), mm = avg%60;
+    avgInLabel = fmtTime(`${String(hh).padStart(2,'0')}:${String(mm).padStart(2,'0')}`);
+  }
+
+  // Flags
+  const editedCount = done.filter(r => r.edited === 'true').length;
+  const autoCount   = done.filter(r => r.auto_clocked_out === 'true').length;
+
+  const statCard = (val, label, color) =>
+    `<div class="card" style="padding:9px;text-align:center;margin:0">
+      <div style="font-family:'Barlow Condensed',sans-serif;font-size:1.35rem;font-weight:800;color:${color||'var(--navy)'}">${val}</div>
+      <div style="font-size:.62rem;color:var(--muted);text-transform:uppercase;letter-spacing:.3px">${label}</div>
+    </div>`;
+
+  showModal(`<div class="modal-title">📊 ${guard?guard.name:'Guard'} — Time Stats</div>
+    <div style="font-size:.74rem;color:var(--muted);margin:-8px 0 12px">All-time · ${fd(firstDate)} → ${fd(lastDate)}</div>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:8px">
+      ${statCard(totalHours.toFixed(1)+'h','Total Hours')}
+      ${statCard(daysWorked,'Days Worked')}
+      ${statCard(avgPerDay.toFixed(1)+'h','Avg / Day')}
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:16px">
+      ${statCard(otTotal>0?otTotal.toFixed(1)+'h':'0h','Overtime',otTotal>0?'var(--coral)':null)}
+      ${statCard(longest.hrs.toFixed(1)+'h','Longest Day',longest.hrs>0?'var(--wave)':null)}
+      ${statCard(avgInLabel,'Avg Clock-In')}
+    </div>
+
+    <div style="font-family:'Barlow Condensed',sans-serif;font-weight:700;font-size:.9rem;color:var(--navy);margin-bottom:4px">Hours by Day of Week</div>
+    <div style="margin-bottom:14px">${dowBars}</div>
+
+    <div style="font-family:'Barlow Condensed',sans-serif;font-weight:700;font-size:.9rem;color:var(--navy);margin-bottom:4px">Hours by Month</div>
+    <div style="margin-bottom:14px">${monthBars}</div>
+
+    <div style="background:var(--foam);border-radius:8px;padding:10px 12px;font-size:.78rem;line-height:1.7">
+      <div>📅 Busiest day: <strong>${DAYS[busiestDow]}</strong> (${dowHours[busiestDow].toFixed(1)}h over ${dowCount[busiestDow]} shift${dowCount[busiestDow]===1?'':'s'})</div>
+      <div>🏆 Longest single day: <strong>${longest.hrs.toFixed(2)}h</strong> on ${fd(longest.date)}</div>
+      <div>🗓️ Weeks worked: <strong>${weeksWorked}</strong> · Shifts logged: <strong>${done.length}</strong></div>
+      ${editedCount||autoCount?`<div style="color:var(--muted);margin-top:2px">${editedCount?`✏️ ${editedCount} edited`:''}${editedCount&&autoCount?' · ':''}${autoCount?`⚠️ ${autoCount} auto clock-out`:''}</div>`:''}
+    </div>
+
+    <div class="modal-foot"><button class="btn btn-navy" onclick="closeModal()">Close</button></div>`);
 }
 
 function showAddManualTimeRecord(guardId) {
@@ -7714,7 +8453,7 @@ const TRAINING_OPTIONS = ['Rescue Skills','First Aid Skills','Lifeguard Knowledg
   'Calisthenics / Body Weight','Swim','Row','Paddle','Kayak','Surf Ski',
   'Resistance / Weight','Other'];
 const SURF_CONDITIONS = ['Calm','Moderate','Rough'];
-const WIND_DIRECTIONS = ['West','West to South East','South East','North East','Other'];
+const WIND_DIRECTIONS = ['West','West to South East','South East','North East','Other/Variable'];
 const WEATHER_OPTIONS = ['Sunny','Cloudy','Showers','Thunder/Lightning','Foggy'];
 const FLAG_OPTIONS    = ['Green','Yellow','Yellow/Red','Red'];
 
@@ -7756,24 +8495,63 @@ let _badgesLoading = false;
 function loadBadges(cb) {
   if (_badgesLoading) { if (cb) cb(); return; } // avoid concurrent award double-writes
   _badgesLoading = true;
-  runG('clientGetBadgeState', r => {
+  const onOk = r => {
     _badgesLoading = false;
     BADGES = (r && r.badges) || [];
     SLACK_ON = !!(r && r.slackConfigured);
-    ((r && r.newlyEarned) || []).forEach(k => {
+    // Don't announce "new badge" toasts for someone else's grid while impersonating.
+    if (!IMPERSONATE) ((r && r.newlyEarned) || []).forEach(k => {
       const b = BADGES.find(x => x.key === k);
       if (b) toast(`🎉 New badge: ${b.emoji} ${b.name}!`, 'ok');
     });
     if (PANEL === 'stats') renderBadgeGrid();
     else if (PANEL === 'dashboard' && !isAdmin()) _rerenderGuardDash(); // surface recent-badges card once loaded
     if (cb) cb();
-  }, () => { _badgesLoading = false; if (cb) cb(); });
+  };
+  const onFail = () => { _badgesLoading = false; if (cb) cb(); };
+  // When impersonating, load the impersonated guard's badges (admin-gated server-side).
+  // Omit the arg entirely otherwise — google.script.run rejects undefined params.
+  if (IMPERSONATE) runG('clientGetBadgeState', onOk, onFail, IMPERSONATE.id);
+  else runG('clientGetBadgeState', onOk, onFail);
+}
+
+// Badges that render their own glyph on a tier-tinted disc instead of a medal.
+const ICON_TIER_KEYS = { sharpshooter: 1, sure_shot: 1 };
+const TIER_BG = {
+  Bronze:   'radial-gradient(circle at 34% 28%, #f0c896, #b06f2e)',
+  Silver:   'radial-gradient(circle at 34% 28%, #ffffff, #9aa1a9 65%, #7f868f)',
+  Gold:     'radial-gradient(circle at 34% 28%, #fff2a8, #e0a500)',
+  Platinum: 'radial-gradient(circle at 34% 28%, #ffffff, #aebccb)'
+};
+// Emoji markup for a badge tile. For Sharpshooter/Sure Shot, draw the real icon
+// on a tier-colored disc (gray when unearned); everything else keeps its medal.
+function badgeGlyph(b, disc) {
+  if (ICON_TIER_KEYS[b.key] && b.baseEmoji) {
+    const bg = b.earned ? (TIER_BG[b.tierLabel] || TIER_BG.Bronze) : '#e5e7eb';
+    const icon = Math.round(disc * 0.56);
+    return `<span class="badge-disc" style="width:${disc}px;height:${disc}px;background:${bg};font-size:${icon}px">${b.baseEmoji}</span>`;
+  }
+  return b.emoji;
+}
+
+// Leaderboard glyph: any tiered badge (one carrying a tierLabel) shows its own
+// icon on a medal-colored disc rather than the bare medal emoji. The medal tier
+// itself is only revealed when the badge is tapped. Non-tiered badges keep their
+// plain emoji.
+function lbGlyph(b, size) {
+  if (b.tierLabel && b.baseEmoji) {
+    const bg = TIER_BG[b.tierLabel] || TIER_BG.Bronze;
+    const icon = Math.round(size * 0.56);
+    return `<span class="badge-disc" style="width:${size}px;height:${size}px;background:${bg};font-size:${icon}px">${b.baseEmoji}</span>`;
+  }
+  return `<span style="font-size:${Math.round(size * 0.72)}px;line-height:1">${b.emoji}</span>`;
 }
 
 function renderBadgeGrid() {
   const el = document.getElementById('badge-grid'); if (!el) return;
   if (!BADGES.length) { el.innerHTML = '<div class="muted" style="padding:8px">No badges yet — get out there! 🏖️</div>'; return; }
-  const order = [...BADGES].sort((a,b) => (b.earned?1:0)-(a.earned?1:0));
+  // Secret badges (e.g. Treasure Hunter) stay hidden until earned.
+  const order = BADGES.filter(b => !(b.secret && !b.earned)).sort((a,b) => (b.earned?1:0)-(a.earned?1:0));
   el.innerHTML = order.map(b => {
     const p = b.progress;
     let sub;
@@ -7789,7 +8567,7 @@ function renderBadgeGrid() {
       sub = `<div class="badge-sub">${b.desc}</div>`;
     }
     return `<div class="badge${b.earned?'':' locked'}" onclick="showBadgeInfo('${b.key}')" title="${b.desc}">
-      <div class="badge-emoji">${b.emoji}</div>
+      <div class="badge-emoji">${badgeGlyph(b, 44)}</div>
       <div class="badge-name">${b.name}</div>
       ${sub}
     </div>`;
@@ -7811,7 +8589,7 @@ function recentBadgesCardHtml() {
     </div>
     <div style="display:flex;gap:14px;flex-wrap:wrap;padding-top:4px">
       ${recent.map(b => `<div onclick="showBadgeInfo('${b.key}')" style="text-align:center;cursor:pointer;width:68px">
-        <div style="font-size:2rem;line-height:1">${b.emoji}</div>
+        <div style="font-size:2rem;line-height:1">${badgeGlyph(b, 44)}</div>
         <div style="font-size:.7rem;font-weight:700;line-height:1.15;margin-top:4px">${b.name}</div>
         ${b.earned_at ? `<div style="font-size:.63rem;color:var(--muted);margin-top:2px">${fd(b.earned_at.slice(0,10))}</div>` : ''}
       </div>`).join('')}
@@ -7819,6 +8597,196 @@ function recentBadgesCardHtml() {
   </div>`;
 }
 function goBadges() { if (!isAdmin() && (IMPERSONATE || isMobile())) mobGo('stats'); else go('stats'); }
+
+// ── Cache Hunt (GPS treasure hunt easter egg) ─────────────────
+// A quietly-rolled-out geocaching game. Admin hides a physical cache holding a
+// secret code and records its GPS coords. Guards get one distance reading per day
+// (a hint — how many feet away they are), then physically find the cache and
+// enter the code to WIN. Only the first guard to enter the code each round wins
+// the (secret, hidden-until-earned) Treasure Hunter badge. The dashboard card
+// only appears when a hunt is live, so it feels like an easter egg.
+function loadCacheHunt(cb) {
+  if (GV || IMPERSONATE) { if (cb) cb(); return; } // only the real logged-in guard
+  runG('clientCacheHuntStatus', r => {
+    CACHEHUNT = r || null;
+    if (PANEL === 'dashboard' && !isAdmin()) _rerenderGuardDash();
+    if (cb) cb();
+  }, () => { if (cb) cb(); });
+}
+// Dashboard card — silent when no hunt is live. Distinct treasure-map styling so
+// it reads as a fun "find me" prompt, not another schedule card.
+function cacheHuntCardHtml() {
+  if (GV || IMPERSONATE) return '';
+  const c = CACHEHUNT;
+  if (!c || !c.active) return '';
+  if (c.iWon) {
+    return `<div class="card cache-card cache-found" onclick="cacheHuntOpen()">
+      <div style="display:flex;align-items:center;gap:12px">
+        <div style="font-size:2rem;line-height:1">🗺️</div>
+        <div style="flex:1">
+          <div style="font-weight:800;font-family:'Barlow Condensed',sans-serif;font-size:1.1rem;letter-spacing:.5px">TREASURE HUNTER</div>
+          <div style="font-size:.8rem;opacity:.9">You cracked the cache! 🎉 Tap for details.</div>
+        </div>
+      </div>
+    </div>`;
+  }
+  if (c.claimed) {
+    return `<div class="card cache-card cache-found" onclick="cacheHuntOpen()">
+      <div style="display:flex;align-items:center;gap:12px">
+        <div style="font-size:2rem;line-height:1">🏆</div>
+        <div style="flex:1">
+          <div style="font-weight:800;font-family:'Barlow Condensed',sans-serif;font-size:1.1rem;letter-spacing:.5px">CACHE FOUND</div>
+          <div style="font-size:.8rem;opacity:.9">${c.winnerName ? _esc(c.winnerName) + ' found it first! 🎉' : 'A crewmate found it first!'} New hunt soon.</div>
+        </div>
+      </div>
+    </div>`;
+  }
+  const sub = c.pingedToday
+    ? "Reading used today — but you can still enter the code if you find it 🔑"
+    : "There's a cache hidden on the beach with a secret code inside. Find it!";
+  return `<div class="card cache-card" onclick="cacheHuntOpen()">
+    <div style="display:flex;align-items:center;gap:12px">
+      <div style="font-size:2rem;line-height:1">🧭</div>
+      <div style="flex:1">
+        <div style="font-weight:800;font-family:'Barlow Condensed',sans-serif;font-size:1.1rem;letter-spacing:.5px">CACHE HUNT</div>
+        <div style="font-size:.8rem;opacity:.9">${sub}</div>
+      </div>
+      <div class="btn btn-sm" style="background:rgba(255,255,255,.2);color:#fff;border:none;pointer-events:none">Open →</div>
+    </div>
+  </div>`;
+}
+function cacheHuntOpen() {
+  if (GV || IMPERSONATE) { toast('Switch off guard view to play.', 'warn'); return; }
+  const c = CACHEHUNT || {};
+  if (c.iWon) {
+    showModal(`<div class="modal-title">🗺️ Treasure Hunter</div>
+      <div style="text-align:center;padding:6px 4px 14px">
+        <div style="font-size:3rem">🏆</div>
+        <p style="margin:10px 0 4px;font-weight:700">You cracked the cache!</p>
+        ${c.prize ? `<div style="margin-top:12px;background:var(--foam);border-radius:10px;padding:12px;font-size:.92rem">${_esc(c.prize)}</div>` : ''}
+      </div>
+      <div class="modal-foot"><button class="btn btn-navy" onclick="closeModal()">Nice</button></div>`);
+    return;
+  }
+  if (c.claimed) {
+    showModal(`<div class="modal-title">🏆 Cache Found</div>
+      <div style="text-align:center;padding:6px 4px 14px">
+        <div style="font-size:3rem">🎉</div>
+        <p style="margin:10px 0 4px;font-weight:700">${c.winnerName ? _esc(c.winnerName) + ' found this one first!' : 'A crewmate found this one first!'}</p>
+        <p class="muted" style="font-size:.9rem">Keep an eye out — a new cache will be hidden soon.</p>
+      </div>
+      <div class="modal-foot"><button class="btn btn-navy" onclick="closeModal()">OK</button></div>`);
+    return;
+  }
+  const readingBlock = c.pingedToday
+    ? `<div id="cache-reading" style="text-align:center;background:var(--foam);border-radius:10px;padding:12px;margin-bottom:14px">
+         <div style="font-size:1.6rem">🌊</div>
+         <p class="muted" style="font-size:.85rem;margin:4px 0 0">You've used today's reading. Come back tomorrow to get closer — or enter the code below if you've found it.</p>
+       </div>`
+    : `<div id="cache-reading" style="text-align:center;margin-bottom:14px">
+         <button class="btn btn-wave" id="cache-go" onclick="cacheHuntGetReading(this)">📍 Get my reading</button>
+         <div class="muted" style="font-size:.76rem;margin-top:6px">One reading per day — how far are you?</div>
+       </div>`;
+  showModal(`<div class="modal-title">🧭 Cache Hunt</div>
+    <p class="muted" style="font-size:.88rem;margin-bottom:14px">A cache is hidden on the premises with a <b>secret code</b> inside. Use a reading to close in, then find it and enter the code to win. First to crack it takes the prize!</p>
+    ${readingBlock}
+    <div style="border-top:1px solid var(--border);padding-top:14px">
+      <label style="font-weight:700;font-size:.9rem">🔑 Found it? Enter the code:</label>
+      <div style="display:flex;gap:8px;margin-top:8px">
+        <input type="text" id="cache-code" class="inp" placeholder="Code from inside the cache" style="flex:1;text-transform:uppercase" onkeydown="if(event.key==='Enter')cacheHuntClaim(document.getElementById('cache-claim'))">
+        <button class="btn btn-green" id="cache-claim" onclick="cacheHuntClaim(this)">Claim</button>
+      </div>
+    </div>
+    <div class="modal-foot"><button class="btn btn-outline" onclick="closeModal()">Close</button></div>`);
+}
+function cacheHuntGetReading(btn) {
+  if (!navigator.geolocation) {
+    toast('Location not available on this device.', 'err');
+    return;
+  }
+  if (btn) { btn.disabled = true; btn.innerHTML = '<span class="spinner"></span> Locating…'; }
+  navigator.geolocation.getCurrentPosition(pos => {
+    runG('clientCacheHuntPing', r => cacheHuntShowReading(r, btn),
+      () => { toast('Reading failed — try again.', 'err'); if (btn) { btn.disabled = false; btn.innerHTML = '📍 Get my reading'; } },
+      pos.coords.latitude, pos.coords.longitude);
+  }, err => {
+    if (btn) { btn.disabled = false; btn.innerHTML = '📍 Get my reading'; }
+    const msg = err && err.code === 1
+      ? 'Location permission denied. Enable it to play.'
+      : 'Could not get your location — try again outside.';
+    toast(msg, 'err');
+  }, { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 });
+}
+// Render the distance reading inline (so the code-entry form stays put).
+function cacheHuntShowReading(r, btn) {
+  if (!r || !r.ok) {
+    if (r && r.error === 'daily') { if (CACHEHUNT) CACHEHUNT.pingedToday = true; toast("You've already taken today's reading.", 'warn'); if (btn) { btn.disabled = false; btn.innerHTML = '📍 Get my reading'; } return; }
+    if (r && r.error === 'inactive') { toast('The hunt just closed.', 'warn'); closeModal(); return; }
+    toast('Reading failed — try again.', 'err');
+    if (btn) { btn.disabled = false; btn.innerHTML = '📍 Get my reading'; }
+    return;
+  }
+  if (CACHEHUNT) CACHEHUNT.pingedToday = true;
+  if (PANEL === 'dashboard') { /* card sub-text updates on next open */ }
+
+  const ft = r.distanceFt;
+  let vibe, emoji;
+  if (ft <= 75)       { vibe = "You're on fire! 🔥"; emoji = '🔥'; }
+  else if (ft <= 200) { vibe = 'Getting warm.';       emoji = '🌡️'; }
+  else if (ft <= 600) { vibe = 'Lukewarm…';           emoji = '😐'; }
+  else if (ft <= 1500){ vibe = 'Cold.';               emoji = '❄️'; }
+  else                { vibe = 'Ice cold! 🧊';        emoji = '🧊'; }
+  const el = document.getElementById('cache-reading');
+  if (el) el.innerHTML = `<div style="text-align:center;background:var(--foam);border-radius:10px;padding:12px">
+    <div style="font-size:2rem">${emoji}</div>
+    <div style="font-family:'Barlow Condensed',sans-serif;font-size:2.2rem;font-weight:800;color:var(--navy);line-height:1.1">${ft.toLocaleString()} ft</div>
+    <p style="margin:2px 0 0;font-weight:700;font-size:.9rem">${vibe}</p>
+    <p class="muted" style="font-size:.78rem;margin-top:6px">That's your reading for today. Find the cache and enter its code below!</p>
+  </div>`;
+}
+// Submit the secret code. Winning is server-adjudicated (first correct entry per round).
+function cacheHuntClaim(btn) {
+  const inp = document.getElementById('cache-code');
+  const code = inp ? inp.value.trim() : '';
+  if (!code) { toast('Enter the code from inside the cache.', 'warn'); return; }
+  if (btn) { btn.disabled = true; btn.innerHTML = '<span class="spinner"></span>'; }
+  runG('clientCacheHuntClaim', r => cacheHuntClaimResult(r, btn),
+    () => { toast('Could not submit — try again.', 'err'); if (btn) { btn.disabled = false; btn.textContent = 'Claim'; } },
+    code);
+}
+function cacheHuntClaimResult(r, btn) {
+  const reEnable = () => { if (btn) { btn.disabled = false; btn.textContent = 'Claim'; } };
+  if (!r || !r.ok) {
+    if (r && r.error === 'inactive') { toast('The hunt just closed.', 'warn'); closeModal(); return; }
+    if (r && r.error === 'nocode')   { toast('No code is set for this hunt yet.', 'warn'); reEnable(); return; }
+    if (r && r.error === 'busy')     { toast('Someone else is claiming right now — try again.', 'warn'); reEnable(); return; }
+    toast('Could not submit — try again.', 'err'); reEnable(); return;
+  }
+  if (r.won) {
+    if (CACHEHUNT) { CACHEHUNT.iWon = true; CACHEHUNT.claimed = true; CACHEHUNT.prize = r.prize || ''; }
+    loadBadges();                 // reveal + surface the now-earned Treasure Hunter badge
+    if (PANEL === 'dashboard') _rerenderGuardDash();
+    showModal(`<div class="modal-title">🎉 You cracked it!</div>
+      <div style="text-align:center;padding:6px 4px 14px">
+        <div style="font-size:3.4rem">🏆</div>
+        <p style="margin:12px 0 4px;font-weight:800;font-size:1.1rem">You found the cache and won!</p>
+        <p style="font-size:.9rem;color:var(--wave);font-weight:700">🗺️ Treasure Hunter badge unlocked!</p>
+        ${r.prize ? `<div style="margin-top:12px;background:var(--foam);border-radius:10px;padding:12px;font-size:.92rem">${_esc(r.prize)}</div>` : ''}
+      </div>
+      <div class="modal-foot"><button class="btn btn-green" onclick="closeModal()">🎉 Awesome</button></div>`);
+    return;
+  }
+  if (r.claimed) {
+    if (CACHEHUNT) { CACHEHUNT.claimed = true; CACHEHUNT.winnerName = r.winnerName || ''; }
+    if (PANEL === 'dashboard') _rerenderGuardDash();
+    toast(r.winnerName ? `${r.winnerName} already found this one! 🎉` : 'Someone already found this one!', 'warn');
+    closeModal();
+    return;
+  }
+  // Wrong code.
+  reEnable();
+  toast("That's not the code — keep looking! 🔍", 'err');
+}
 
 // ── Share to crew (Slack) ─────────────────────────────────────
 // Posts a short brag line to the crew. If the admin configured a Slack webhook
@@ -7867,8 +8835,11 @@ function showBadgeInfo(key) {
   const p = b.progress;
   let status;
   if (b.tiers) {
+    const iconTier = ICON_TIER_KEYS[b.key] && b.baseEmoji;
     const ladder = b.tiers.map(t => `<div style="display:flex;align-items:center;gap:10px;padding:5px 2px;${t.reached?'':'opacity:.4'}">
-        <span style="font-size:1.4rem;line-height:1">${t.emoji}</span>
+        ${iconTier
+          ? `<span class="badge-disc" style="width:30px;height:30px;background:${TIER_BG[t.label]||TIER_BG.Bronze};font-size:16px">${b.baseEmoji}</span>`
+          : `<span style="font-size:1.4rem;line-height:1">${t.emoji}</span>`}
         <span style="font-weight:700">${t.label}</span>
         <span style="color:var(--muted);font-size:.8rem">${t.n}+</span>
         <span style="margin-left:auto">${t.reached?'✅':'🔒'}</span>
@@ -7899,7 +8870,7 @@ function showBadgeInfo(key) {
     status = `<div style="margin-top:14px;font-weight:700;color:var(--muted)">🔒 Not yet earned</div>`;
   }
   showModal(`<div style="text-align:center">
-    <div style="font-size:3.2rem;line-height:1;margin-bottom:8px${b.earned?'':';filter:grayscale(1);opacity:.5'}">${b.emoji}</div>
+    <div style="font-size:3.2rem;line-height:1;margin-bottom:8px${b.earned?'':';filter:grayscale(1);opacity:.5'}">${badgeGlyph(b, 66)}</div>
     <div class="modal-title" style="margin-bottom:6px">${b.name}</div>
     <div style="font-size:.88rem;color:var(--muted);line-height:1.45">${b.desc}</div>
     ${status}
@@ -7939,7 +8910,7 @@ function lbRow(g, abs) {
   const rank = abs + 1;
   const badges = g.badges.map((b, bi) =>
     `<span onclick="lbBadge(${abs},${bi})" title="${b.name}"
-       style="cursor:pointer;font-size:1.35rem;line-height:1.5;margin-right:4px">${b.emoji}</span>`).join('');
+       style="cursor:pointer;display:inline-block;margin:0 4px 4px 0;vertical-align:middle">${lbGlyph(b, 30)}</span>`).join('');
   return `<div style="display:flex;align-items:flex-start;gap:10px;padding:10px 4px;border-bottom:1px solid var(--border)">
     <div style="font-weight:800;color:var(--navy);min-width:34px;font-size:1rem">#${rank}</div>
     <div style="flex:1;min-width:0">
@@ -7986,10 +8957,13 @@ function lbBadge(abs, bIdx) {
   const g = _lbData[abs]; if (!g) return;
   const b = g.badges[bIdx]; if (!b) return;
   const el = document.getElementById('lb-detail'); if (!el) return;
+  const tier = b.tierLabel ? `<span style="font-size:1.1rem;line-height:1">${b.emoji}</span>
+      <span style="font-weight:700;color:var(--navy);font-size:.82rem">${b.tierLabel}</span>` : '';
   el.innerHTML = `<div style="background:var(--foam);border:1px solid var(--border);border-radius:10px;padding:10px 12px;margin-bottom:10px;display:flex;gap:10px;align-items:flex-start">
-    <span style="font-size:1.8rem;line-height:1">${b.emoji}</span>
+    <span style="line-height:1">${lbGlyph(b, 34)}</span>
     <div><div style="font-weight:700;color:var(--navy)">${b.name}</div>
-      <div style="font-size:.82rem;color:var(--muted);line-height:1.4">${b.desc}</div></div>
+      <div style="font-size:.82rem;color:var(--muted);line-height:1.4">${b.desc}</div>
+      ${tier ? `<div style="display:flex;align-items:center;gap:6px;margin-top:4px">${tier}</div>` : ''}</div>
   </div>`;
 }
 
@@ -8059,6 +9033,15 @@ function openStatsForm(timeRecordId, targetDate) {
   }, e => { closeModal(); toast('Could not load. Try again.','err'); }, D.activePeriod?.id);
 }
 
+// Edit a previously-submitted card straight from the My Stats list. Passes the
+// saved card into the modal so it prefills (a true edit, not a blank re-entry) —
+// works even for missed-day cards that have no linked time record.
+function editStatCard(statId) {
+  const stat = (_myStatsSorted||[]).find(s => String(s.id) === String(statId));
+  if (!stat) { toast('Could not load that card. Try reloading.','err'); return; }
+  showStatsModal({ id: stat.time_record_id || '', date: stat.date, shift_id: stat.shift_id, guard_name: S?.guard?.name }, stat);
+}
+
 function openMissedStatsDate() {
   const today = ymd(new Date());
   const minDate = D.activePeriod?.start_date || '';
@@ -8080,9 +9063,19 @@ function confirmMissedStatsDate() {
   openStatsForm('', v);
 }
 
-function showStatsModal(rec) {
+function showStatsModal(rec, existing) {
   const d = rec.date ? new Date(rec.date+'T12:00:00') : new Date();
   const dateLabel = `${DAYS[d.getDay()]} ${MONTHS[d.getMonth()]} ${d.getDate()}`;
+
+  // Editing a previously-submitted card: prefill with its saved values so this is
+  // a true edit, not a blank re-entry. Fall back to matching by time record / date
+  // when the caller didn't hand us the exact card.
+  if (!existing) {
+    existing = (_myStatsSorted||[]).find(s =>
+      (rec.id && s.time_record_id === rec.id) ||
+      (!rec.id && !s.time_record_id && s.date === rec.date)
+    ) || null;
+  }
 
   const beachOpts = BEACH_LOCATIONS.map(b =>
     `<option value="${b}">${b}</option>`).join('');
@@ -8140,6 +9133,7 @@ function showStatsModal(rec) {
       ${numField('rfd','RFD Rescues')}
       ${numField('rfdline','RFD + Line Rescues')}
       ${numField('seabob','Seabob Rescues')}
+      ${numField('paddleboard','Paddleboard Rescues')}
       ${numField('firstaid','First Aid')}
     </div>
     <label style="display:flex;align-items:flex-start;gap:8px;font-size:.83rem;cursor:pointer;user-select:none;margin:2px 0 10px;color:var(--navy);font-weight:600">
@@ -8187,18 +9181,29 @@ function showStatsModal(rec) {
       <button class="btn btn-navy" onclick="submitStatsForm('${rec.id}','${rec.date||ymd(new Date())}','${rec.shift_id||''}')">Submit Stats</button>
     </div>`, true); // true = wide modal
 
-  // Restore draft if one exists for this date
+  // Restore draft if one exists for this date; otherwise prefill from the
+  // previously-submitted card so an edit starts from the saved values.
   const draftKey = `stats_draft_${rec.date || ymd(new Date())}`;
   try {
-    const draft = JSON.parse(localStorage.getItem(draftKey) || 'null');
+    const KNOWN_SHIFTS = ['Dawn Patrol','Regular','Late Shift','Patrol and Response'];
+    const existingAsDraft = existing ? Object.assign({}, existing, {
+      shift_sel:   KNOWN_SHIFTS.indexOf(existing.shift_id) >= 0 ? existing.shift_id : (existing.shift_id ? 'other' : ''),
+      shift_other: KNOWN_SHIFTS.indexOf(existing.shift_id) >= 0 ? '' : (existing.shift_id || ''),
+      assisted_other: String(existing.assisted_other) === 'true',
+      training:    String(existing.training||'').split(',').map(x=>x.trim()).filter(Boolean),
+      flags_flown: String(existing.flags_flown||'').split(',').map(x=>x.trim()).filter(Boolean)
+    }) : null;
+    const lsDraft = JSON.parse(localStorage.getItem(draftKey) || 'null');
+    const draft = lsDraft || existingAsDraft;
+    const fromExisting = !lsDraft && !!existingAsDraft;
     if (draft) {
       const sv = (id, val) => { const el = document.getElementById(id); if (el && val !== undefined && val !== null) el.value = val; };
       sv('ss-beach', draft.beach_location);
       sv('ss-shift-sel', draft.shift_sel);
       sv('ss-shift-other', draft.shift_other);
       if (draft.shift_sel === 'other') toggleShiftOther('other');
-      ['preventive','bather','rfd','rfdline','seabob','firstaid','incidents','ten24','ten34','harassment','vandalism'].forEach(id => {
-        const key = {preventive:'preventive_actions',bather:'bather_assists',rfd:'rfd_rescues',rfdline:'rfd_line_rescues',seabob:'seabob_rescues',firstaid:'first_aid',incidents:'incidents',ten24:'ten_24',ten34:'ten_34',harassment:'patron_harassment',vandalism:'vandalism'}[id];
+      ['preventive','bather','rfd','rfdline','seabob','paddleboard','firstaid','incidents','ten24','ten34','harassment','vandalism'].forEach(id => {
+        const key = {preventive:'preventive_actions',bather:'bather_assists',rfd:'rfd_rescues',rfdline:'rfd_line_rescues',seabob:'seabob_rescues',paddleboard:'paddleboard_rescues',firstaid:'first_aid',incidents:'incidents',ten24:'ten_24',ten34:'ten_34',harassment:'patron_harassment',vandalism:'vandalism'}[id];
         sv(`ss-${id}`, draft[key]);
         if (parseInt(draft[key]) > 0) toggleDesc(id, draft[key]);
       });
@@ -8215,7 +9220,9 @@ function showStatsModal(rec) {
       sv('ss-temp', draft.air_temp);
       sv('ss-weather', draft.weather);
       sv('ss-notes', draft.notes);
-      toast('Draft restored — review your entries and resubmit.', 'warn');
+      toast(fromExisting
+        ? 'Editing your submitted card — update and resubmit.'
+        : 'Draft restored — review your entries and resubmit.', 'warn');
     }
   } catch(e) {}
 }
@@ -8255,6 +9262,7 @@ function submitStatsForm(timeRecordId, date, shiftId) {
     rfd_rescues:         getNum('rfd'),
     rfd_line_rescues:    getNum('rfdline'),
     seabob_rescues:      getNum('seabob'),
+    paddleboard_rescues: getNum('paddleboard'),
     first_aid:           getNum('firstaid'),
     assisted_other:      document.getElementById('ss-assisted-other')?.checked || false,
     incidents:           getNum('incidents'),       incidents_desc:    getDesc('incidents'),
@@ -8352,14 +9360,14 @@ function loadMyStats(periodId) {
 function myStatsCardRow(s) {
   const d = new Date(s.date+'T12:00:00');
   const total = [s.preventive_actions,s.bather_assists,s.rfd_rescues,s.rfd_line_rescues,
-    s.seabob_rescues,s.first_aid].reduce((sum,v)=>sum+(parseInt(v)||0),0);
+    s.seabob_rescues,s.paddleboard_rescues,s.first_aid].reduce((sum,v)=>sum+(parseInt(v)||0),0);
   return `<div class="card" style="margin-bottom:8px;padding:12px 14px">
     <div class="flex between items-c">
       <div>
         <div style="font-weight:700">${DAYS[d.getDay()]} ${MONTHS[d.getMonth()]} ${d.getDate()}</div>
         <div style="font-size:.78rem;color:var(--muted)">${s.beach_location||'No location'} · ${total} actions/incidents</div>
       </div>
-      <button class="btn btn-outline btn-xs" onclick="openStatsForm('${s.time_record_id}')">Edit</button>
+      <button class="btn btn-outline btn-xs" onclick="editStatCard('${s.id}')">Edit</button>
     </div>
     ${s.training?`<div style="font-size:.72rem;color:var(--muted);margin-top:4px">Training: ${s.training}</div>`:''}
     ${String(s.assisted_other)==='true'?`<div style="font-size:.72rem;color:var(--wave);margin-top:4px">🤝 Assisted on an action credited to another guard</div>`:''}
@@ -8391,6 +9399,7 @@ const STAT_ROWS = [
   {key:'rfd_rescues',         label:'RFD Rescues',        color:'var(--coral)'},
   {key:'rfd_line_rescues',    label:'RFD + Line',         color:'var(--coral)'},
   {key:'seabob_rescues',      label:'Seabob',             color:'var(--coral)'},
+  {key:'paddleboard_rescues', label:'Paddleboard',        color:'var(--coral)'},
   {key:'first_aid',           label:'First Aid',          color:'var(--sun)'},
   {key:'incidents',           label:'Incidents',          color:'var(--muted)'},
   {key:'ten_55',              label:'10-55',              color:'var(--muted)'},
@@ -8412,6 +9421,7 @@ const STAT_EVENT_CHECKS = [
   {key:'vandalism',         label:'Vandalism',         desc:'vandalism_desc',         rare:true},
   {key:'incidents',         label:'Incident',          desc:'incidents_desc',         rare:true},
   {key:'seabob_rescues',    label:'Seabob Rescue',     desc:null,                     rare:true},
+  {key:'paddleboard_rescues', label:'Paddleboard Rescue', desc:null,                  rare:true},
   {key:'rfd_line_rescues',  label:'RFD + Line Rescue', desc:null,                     rare:false},
   {key:'rfd_rescues',       label:'RFD Rescue',        desc:null,                     rare:false},
   {key:'first_aid',         label:'First Aid',         desc:null,                     rare:false},
@@ -8477,13 +9487,22 @@ R['stats-admin'] = function() {
   loadBadgeLeaderboard();
 };
 
-let _badgeMeta = {}; // key → {name, emoji, desc} for badges shown in the leaderboard
-function showBadgeMeta(key) {
-  const b = _badgeMeta[key]; if (!b) return;
+// Admin leaderboard rows. Clicks index into this by [earner][badge] rather than a
+// key→meta map: tiered badges share one key across tiers (e.g. every guard's
+// Consolation Prize is key `consolation_prize`), so a shared map would show the
+// last-processed guard's tier for everyone. Indexing keeps each guard's own tier.
+let _lbAdminData = [];
+function showBadgeMeta(ri, bi) {
+  const g = _lbAdminData[ri]; if (!g) return;
+  const b = g.badges[bi]; if (!b) return;
+  const tier = b.tierLabel ? `<div style="display:flex;align-items:center;justify-content:center;gap:6px;margin-top:8px">
+      <span style="font-size:1.3rem;line-height:1">${b.emoji}</span>
+      <span style="font-weight:700;color:var(--navy)">${b.tierLabel}</span></div>` : '';
   showModal(`<div style="text-align:center">
-    <div style="font-size:3.2rem;line-height:1;margin-bottom:8px">${b.emoji}</div>
+    <div style="line-height:1;margin-bottom:8px">${lbGlyph(b, 66)}</div>
     <div class="modal-title" style="margin-bottom:6px">${b.name}</div>
     <div style="font-size:.88rem;color:var(--muted);line-height:1.45">${b.desc||''}</div>
+    ${tier}
     </div>
     <div class="modal-foot">
       <button class="btn btn-navy" onclick="closeModal()">Close</button>
@@ -8495,12 +9514,11 @@ function loadBadgeLeaderboard() {
     const el = document.getElementById('badge-leaderboard'); if (!el) return;
     const earners = (rows || []).filter(r => r.count > 0);
     if (!earners.length) { el.innerHTML = '<div class="muted" style="padding:8px">No badges earned yet.</div>'; return; }
-    _badgeMeta = {};
-    earners.forEach(r => r.badges.forEach(b => { _badgeMeta[b.key] = b; }));
-    el.innerHTML = earners.map(r => `<div class="flex between items-c" style="padding:7px 4px;border-bottom:1px solid var(--border)">
+    _lbAdminData = earners;
+    el.innerHTML = earners.map((r, ri) => `<div class="flex between items-c" style="padding:7px 4px;border-bottom:1px solid var(--border)">
         <div style="font-weight:600;font-size:.86rem">${r.name}</div>
         <div style="display:flex;align-items:center;gap:8px">
-          <span style="font-size:1rem;letter-spacing:1px">${r.badges.map(b=>`<span onclick="showBadgeMeta('${b.key}')" title="${b.name}" style="cursor:pointer">${b.emoji}</span>`).join('')}</span>
+          <span style="display:flex;align-items:center;gap:3px;flex-wrap:wrap;justify-content:flex-end">${r.badges.map((b, bi)=>`<span onclick="showBadgeMeta(${ri},${bi})" title="${b.name}" style="cursor:pointer;display:inline-flex;align-items:center">${lbGlyph(b, 22)}</span>`).join('')}</span>
           <span class="muted" style="font-size:.78rem">${r.count}</span>
         </div>
       </div>`).join('');
@@ -8666,7 +9684,7 @@ function renderAdminStatsPage() {
           <th>Guard</th><th>Post</th>
           <th style="text-align:center">Prev</th><th style="text-align:center">Assist</th>
           <th style="text-align:center">RFD</th><th style="text-align:center">RFD+L</th>
-          <th style="text-align:center">Seabob</th><th style="text-align:center">FA</th>
+          <th style="text-align:center">Seabob</th><th style="text-align:center">PB</th><th style="text-align:center">FA</th>
           <th style="text-align:center">Inc</th><th>Flags</th><th>Conditions</th>
         </tr></thead><tbody>
         ${[...d.statsForDate].sort((a,b)=>a.beach_location>b.beach_location?1:-1).map(s=>`<tr>
@@ -8677,6 +9695,7 @@ function renderAdminStatsPage() {
           <td style="text-align:center;${parseInt(s.rfd_rescues)>0?'color:var(--coral);font-weight:700':''}">${s.rfd_rescues||0}</td>
           <td style="text-align:center;${parseInt(s.rfd_line_rescues)>0?'color:var(--coral);font-weight:700':''}">${s.rfd_line_rescues||0}</td>
           <td style="text-align:center;${parseInt(s.seabob_rescues)>0?'color:var(--coral);font-weight:700':''}">${s.seabob_rescues||0}</td>
+          <td style="text-align:center;${parseInt(s.paddleboard_rescues)>0?'color:var(--coral);font-weight:700':''}">${s.paddleboard_rescues||0}</td>
           <td style="text-align:center">${s.first_aid||0}</td>
           <td style="text-align:center">${s.incidents||0}</td>
           <td style="font-size:.75rem">${s.flags_flown||'—'}</td>
@@ -8888,10 +9907,6 @@ function exportStatsCSV() {
     document.removeEventListener('keydown', spEscListener);
   };
 
-  window.spBackdropClick = function(e) {
-    if (e.target === document.getElementById('seven-pres-backdrop')) spClose();
-  };
-
   function spReset() {
     _spCount = 0;
   }
@@ -8915,10 +9930,11 @@ function exportStatsCSV() {
     if (!logo) return;
     logo.addEventListener('click', function() {
       _spCount++;
-      if (_spCount >= 7) {
-        spFlash(1, function() { spReset(); spOpen(); });
+      var remaining = 8 - _spCount; // 7,6,5,4,3,2,1,0
+      if (remaining <= 0) {
+        spFlash(0, function() { spReset(); spOpen(); });
       } else {
-        spFlash(8 - _spCount);
+        spFlash(remaining);
       }
     });
   });
@@ -8968,7 +9984,14 @@ var BINGO_ITEMS = [
   'Rogue wave soaks the stand',
   'Radio on wrong channel',
   'Boat too close to shore',
-  'Shore break sends adult tumbling'
+  'Shore break sends adult tumbling',
+  'Rescue same person/family twice',
+  'Can\'t reach rangers on radio',
+  'Smell weed',
+  'Rookie swims to wrong victim',
+  'Drone on beach',
+  'Familiar local says hi',
+  'Bather in t-shirt/dress/clothing'
 ];
 
 var WIN_PATTERNS = [
