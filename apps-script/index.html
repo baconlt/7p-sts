@@ -2329,7 +2329,7 @@ function renderMobSched(dates, today){
 // ══════════════════════════════════════════
 // ADMIN: FULL SCHEDULE — by post or by guard
 // ══════════════════════════════════════════
-let FSA_VIEW='post'; // 'post' | 'guard'
+let FSA_VIEW='guard'; // 'post' | 'guard'
 function toggleFsaView(){FSA_VIEW=FSA_VIEW==='post'?'guard':'post';R['full-schedule-admin']();}
 // A shift's start time in minutes-since-midnight (SPEC custom start, else template start),
 // reusing fmtTime to normalize the many stored formats. Unknown times sort last.
@@ -8451,7 +8451,7 @@ const BEACH_LOCATIONS = ['Atlantic','Avenel','Kiernan North','Kiernan Central','
   'Joline','Sea View','Late Shift','Patrol and Response'];
 const TRAINING_OPTIONS = ['Rescue Skills','First Aid Skills','Lifeguard Knowledge','Run',
   'Calisthenics / Body Weight','Swim','Row','Paddle','Kayak','Surf Ski',
-  'Resistance / Weight','Other'];
+  'Resistance / Weight','Cadet Training Coordinator','Other'];
 const SURF_CONDITIONS = ['Calm','Moderate','Rough'];
 const WIND_DIRECTIONS = ['West','West to South East','South East','North East','Other/Variable'];
 const WEATHER_OPTIONS = ['Sunny','Cloudy','Showers','Thunder/Lightning','Foggy'];
