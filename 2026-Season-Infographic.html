@@ -1,0 +1,453 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Seven Presidents STS — 2026 Season</title>
+<style>
+@page { size: 8.5in 11in; margin: 0; }
+*{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --navy:#0D2028; --navy2:#16303B;
+  --ground:#EDF0EB; --card:#FFFFFF; --sunk:#DCE2DB; --rule:#C6CFC6;
+  --ink:#101A1E; --ink2:#4C5A5E; --ink3:#7B888C;
+  --acc:#C8431C; --blue:#2a78d6; --orange:#eb6834;
+  --fg:#1E7A3C; --fy:#D69A00; --fr:#C0271B;
+}
+html{-webkit-print-color-adjust:exact;print-color-adjust:exact}
+body{
+  font-family:"Iowan Old Style",Charter,Georgia,serif;
+  color:var(--ink);background:var(--ground);
+  font-size:8.4pt;line-height:1.4;
+}
+.disp{font-family:"Avenir Next Condensed","Avenir Next",Futura,"Trebuchet MS",sans-serif}
+.mono{font-family:"SF Mono",Menlo,Consolas,monospace}
+
+.page{width:8.5in;height:11in;overflow:hidden;position:relative;background:var(--ground);
+  display:flex;flex-direction:column}
+.page:first-child{page-break-after:always}
+
+/* ---- masthead ---- */
+.flagstripe{display:flex;height:5pt;flex:none}
+.flagstripe i{display:block;height:100%}
+.mast{background:var(--navy);color:#EAF1EE;padding:16pt 34pt 14pt;flex:none}
+.mast .kick{font-family:"SF Mono",Menlo,monospace;font-size:5.7pt;letter-spacing:.2em;
+  text-transform:uppercase;color:#7E9AA3}
+.mast h1{font-family:"Avenir Next Condensed","Avenir Next",Futura,sans-serif;font-weight:700;
+  font-size:30pt;line-height:.9;letter-spacing:-.01em;margin-top:5pt;color:#F4F8F6}
+.mast h1 span{color:#8FB4BE}
+.mast .sub{font-size:8.2pt;color:#A8C0C7;margin-top:6pt;max-width:5in}
+.mast .sub b{color:#EAF1EE}
+
+.mast.slim{padding:13pt 34pt 12pt}
+.mast.slim h1{font-size:23pt;margin-top:3pt}
+
+.body{padding:0 34pt;flex:1;display:flex;flex-direction:column;gap:5pt;padding-top:7.5pt;padding-bottom:0}
+
+/* ---- section head ---- */
+.sh{display:flex;align-items:baseline;gap:7pt;border-bottom:1.1pt solid var(--ink);
+  padding-bottom:2pt;margin-bottom:4.5pt}
+.sh h2{font-family:"Avenir Next Condensed","Avenir Next",Futura,sans-serif;font-weight:700;
+  font-size:11pt;line-height:1;letter-spacing:0}
+.sh .n{font-family:"SF Mono",Menlo,monospace;font-size:6pt;letter-spacing:.16em;
+  color:#fff;background:var(--acc);padding:1.7pt 4pt;border-radius:1.5pt}
+.sh .r{margin-left:auto;font-family:"SF Mono",Menlo,monospace;font-size:6pt;
+  letter-spacing:.13em;text-transform:uppercase;color:var(--ink3)}
+
+/* ---- big stats ---- */
+.hero5{display:grid;grid-template-columns:repeat(5,1fr);gap:1pt;background:var(--rule);
+  border:1pt solid var(--rule)}
+.hero5 div{background:var(--card);padding:5.5pt 8pt 6pt;text-align:left}
+.hero5 .n{font-family:"Avenir Next Condensed","Avenir Next",Futura,sans-serif;font-weight:700;
+  font-size:19pt;line-height:.92;font-variant-numeric:tabular-nums}
+.hero5 .n.a{color:var(--acc)}
+.hero5 .l{font-family:"SF Mono",Menlo,monospace;font-size:5.4pt;letter-spacing:.12em;
+  text-transform:uppercase;color:var(--ink3);margin-top:3.5pt;line-height:1.35}
+
+/* ---- ratio band ---- */
+.ratio{background:var(--navy);color:#EAF1EE;padding:6.5pt 12pt;display:flex;
+  align-items:center;gap:16pt;border-radius:2pt}
+.ratio .big{font-family:"Avenir Next Condensed","Avenir Next",Futura,sans-serif;font-weight:700;
+  font-size:25pt;line-height:.9;color:#F4F8F6;white-space:nowrap}
+.ratio .big em{font-style:normal;color:#8FB4BE;font-size:16pt}
+.ratio p{font-size:7.9pt;color:#B9CCD2;line-height:1.42}
+.ratio p b{color:#F4F8F6}
+
+/* ---- generic cols ---- */
+.cols{display:flex;gap:11pt;align-items:stretch}
+.col{flex:1;min-width:0}
+.card{background:var(--card);border:1pt solid var(--rule);border-radius:2pt;padding:6pt 8.5pt 6pt}
+.card h3{font-family:"Avenir Next Condensed","Avenir Next",Futura,sans-serif;font-weight:700;
+  font-size:9.4pt;line-height:1.1}
+.card .unit{font-family:"SF Mono",Menlo,monospace;font-size:5.4pt;letter-spacing:.11em;
+  text-transform:uppercase;color:var(--ink3);margin:1.5pt 0 5.5pt}
+
+/* ---- bars ---- */
+.bars{display:flex;flex-direction:column;gap:1.9pt}
+.br{display:grid;grid-template-columns:52pt 1fr 34pt;align-items:center;gap:5pt}
+.br.w{grid-template-columns:44pt 1fr 40pt}
+.br.f{grid-template-columns:50pt 1fr 64pt}
+.br .v u{text-decoration:none;color:var(--ink3)}
+.br .lab{font-family:"SF Mono",Menlo,monospace;font-size:6.1pt;color:var(--ink2);
+  text-align:right;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.br .tk{background:var(--sunk);height:6.4pt;border-radius:0 2pt 2pt 0}
+.br .fl{display:block;height:100%;background:var(--blue);border-radius:0 2pt 2pt 0}
+.fl.a{background:var(--acc)} .fl.o{background:var(--orange)}
+.fl.g{background:var(--fg)} .fl.y{background:var(--fy)} .fl.r{background:var(--fr)}
+.br .v{font-family:"SF Mono",Menlo,monospace;font-size:6.3pt;text-align:right;
+  font-variant-numeric:tabular-nums;white-space:nowrap}
+.cap{font-size:6.6pt;color:var(--ink2);line-height:1.38;margin-top:5pt;
+  border-top:.6pt solid var(--rule);padding-top:4pt}
+.cap b{color:var(--ink)}
+.lg{display:flex;gap:9pt;margin-bottom:4.5pt}
+.lg span{display:flex;align-items:center;gap:3pt;font-family:"SF Mono",Menlo,monospace;
+  font-size:5.6pt;letter-spacing:.06em;text-transform:uppercase;color:var(--ink2)}
+.lg i{width:7pt;height:7pt;border-radius:1.5pt;display:block}
+
+/* ---- table ---- */
+table{border-collapse:collapse;width:100%;font-size:7.1pt}
+th,td{padding:1.8pt 4pt;text-align:right;border-bottom:.5pt solid var(--rule);
+  font-variant-numeric:tabular-nums;white-space:nowrap}
+th{font-family:"SF Mono",Menlo,monospace;font-size:5.3pt;letter-spacing:.1em;
+  text-transform:uppercase;color:var(--ink3);font-weight:400;background:var(--sunk)}
+td:first-child,th:first-child{text-align:left}
+td.m{font-family:"SF Mono",Menlo,monospace;font-size:6.8pt}
+tbody tr:last-child td{border-bottom:none}
+tr.hi td{background:#F6E4DE}
+
+/* ---- day strip ---- */
+.days{display:grid;grid-template-columns:repeat(4,1fr);gap:1pt;background:var(--rule);
+  border:1pt solid var(--rule)}
+.days div{background:var(--card);padding:5.5pt 7pt 6pt}
+.days .d{font-family:"SF Mono",Menlo,monospace;font-size:5.5pt;letter-spacing:.13em;
+  text-transform:uppercase;color:var(--acc)}
+.days .n{font-family:"Avenir Next Condensed","Avenir Next",Futura,sans-serif;font-weight:700;
+  font-size:14pt;line-height:1;margin-top:2.5pt;font-variant-numeric:tabular-nums}
+.days .t{font-size:5.9pt;color:var(--ink2);line-height:1.33;margin-top:2.5pt}
+
+/* ---- finding callout ---- */
+.find{display:flex;gap:12pt;align-items:center;background:var(--card);
+  border:1pt solid var(--rule);border-left:3pt solid var(--acc);border-radius:2pt;padding:6pt 10pt}
+.find .k{font-family:"Avenir Next Condensed","Avenir Next",Futura,sans-serif;font-weight:700;
+  font-size:24pt;line-height:.88;color:var(--acc);white-space:nowrap}
+.find p{font-size:7.9pt;line-height:1.42}
+.find p b{font-weight:600}
+
+/* ---- punctuality tiles ---- */
+.p4{display:grid;grid-template-columns:repeat(4,1fr);gap:1pt;background:var(--rule);
+  border:1pt solid var(--rule)}
+.p4 div{background:var(--card);padding:5pt 7.5pt 5.5pt}
+.p4 .n{font-family:"Avenir Next Condensed","Avenir Next",Futura,sans-serif;font-weight:700;
+  font-size:16pt;line-height:1;font-variant-numeric:tabular-nums}
+.p4 .l{font-family:"SF Mono",Menlo,monospace;font-size:5.3pt;letter-spacing:.11em;
+  text-transform:uppercase;color:var(--ink3);margin-top:3.5pt;line-height:1.4}
+
+/* ---- footer ---- */
+.foot{margin-top:auto;background:var(--navy);color:#7E9AA3;padding:5.5pt 34pt 6pt;
+  font-family:"SF Mono",Menlo,monospace;font-size:5.6pt;letter-spacing:.09em;
+  display:flex;justify-content:space-between;flex:none}
+.foot b{color:#B9CCD2;font-weight:400}
+.micro{font-size:5.8pt;color:var(--ink3);line-height:1.42}
+.micro b{color:var(--ink2)}
+</style>
+</head>
+<body>
+
+<!-- ================= PAGE 1 ================= -->
+<div class="page">
+  <div class="flagstripe">
+    <i style="width:69.3%;background:var(--fg)"></i>
+    <i style="width:19.6%;background:var(--fy)"></i>
+    <i style="width:11.1%;background:var(--fr)"></i>
+  </div>
+
+  <div class="mast">
+    <div class="kick">Seven Presidents Oceanfront Park &middot; Long Branch, NJ</div>
+    <h1>The 2026 Season <span>in Data</span></h1>
+    <p class="sub">Every punch, every stat card, every rescue logged between
+      <b>April 13 and August 6, 2026</b>. Drawn from 1,342 time records and 1,046 stat cards.</p>
+  </div>
+
+  <div class="body">
+
+    <div class="hero5">
+      <div><div class="n">10,257</div><div class="l">Guard-hours<br>on the sand</div></div>
+      <div><div class="n">17,082</div><div class="l">Preventive<br>actions</div></div>
+      <div><div class="n a">189</div><div class="l">Water<br>rescues</div></div>
+      <div><div class="n">120</div><div class="l">First aid<br>responses</div></div>
+      <div><div class="n">41</div><div class="l">Guards over<br>94 duty days</div></div>
+    </div>
+
+    <div class="ratio">
+      <div class="big">90<em>&thinsp;:&thinsp;</em>1</div>
+      <p>Preventive actions per rescue. <b>The overwhelming majority of this job is the whistle, the
+      wave-off and the walk down the beach</b> — the rescue is the exception the preventives are buying.
+      Rescue breakdown: 170 can &middot; 8 paddleboard &middot; 7 SeaBob &middot; 4 can-and-line.</p>
+    </div>
+
+    <div>
+      <div class="sh"><span class="n">01</span><h2>July wasn't a month. It was the season.</h2>
+        <span class="r">Aug = 1st–6th only</span></div>
+      <div class="cols">
+        <div class="col card">
+          <h3>Hours worked</h3><div class="unit">Guard-hours by month</div>
+          <div class="bars">
+            <div class="br"><span class="lab">May</span><span class="tk"><span class="fl" style="width:15.4%"></span></span><span class="v">881</span></div>
+            <div class="br"><span class="lab">June</span><span class="tk"><span class="fl" style="width:47.2%"></span></span><span class="v">2,694</span></div>
+            <div class="br"><span class="lab">July</span><span class="tk"><span class="fl a" style="width:100%"></span></span><span class="v">5,706</span></div>
+            <div class="br"><span class="lab">Aug 1–6</span><span class="tk"><span class="fl" style="width:16.7%"></span></span><span class="v">953</span></div>
+          </div>
+          <div class="cap">July carried <b>55.6%</b> of every hour worked.</div>
+        </div>
+        <div class="col card">
+          <h3>Preventive actions</h3><div class="unit">Total logged by month</div>
+          <div class="bars">
+            <div class="br"><span class="lab">May</span><span class="tk"><span class="fl" style="width:0.6%"></span></span><span class="v">73</span></div>
+            <div class="br"><span class="lab">June</span><span class="tk"><span class="fl" style="width:20.1%"></span></span><span class="v">2,643</span></div>
+            <div class="br"><span class="lab">July</span><span class="tk"><span class="fl a" style="width:100%"></span></span><span class="v">13,159</span></div>
+            <div class="br"><span class="lab">Aug 1–6</span><span class="tk"><span class="fl" style="width:9.2%"></span></span><span class="v">1,207</span></div>
+          </div>
+          <div class="cap">But <b>77%</b> of preventives and <b>76%</b> of rescues — on 56% of the hours.
+          A July hour carried <b>2.4× the workload</b> of a June hour.</div>
+        </div>
+      </div>
+    </div>
+
+    <div>
+      <div class="sh"><span class="n">02</span><h2>Nine posts, nine different jobs</h2>
+        <span class="r">1,046 stat cards</span></div>
+      <div class="cols">
+        <div class="col" style="flex:1.45">
+          <table>
+            <thead><tr><th>Post</th><th>Cards</th><th>Prevent.</th><th>Per card</th><th>Rescues</th><th>1st aid</th></tr></thead>
+            <tbody>
+              <tr><td>Kiernan Central</td><td class="m">242</td><td class="m">6,042</td><td class="m">25.0</td><td class="m">28</td><td class="m"><b>44</b></td></tr>
+              <tr class="hi"><td>Joline</td><td class="m">212</td><td class="m">4,696</td><td class="m">22.2</td><td class="m"><b>79</b></td><td class="m">20</td></tr>
+              <tr><td>Atlantic</td><td class="m">207</td><td class="m">1,519</td><td class="m">7.3</td><td class="m">19</td><td class="m">16</td></tr>
+              <tr><td>Patrol &amp; Response</td><td class="m">151</td><td class="m">760</td><td class="m">5.0</td><td class="m">14</td><td class="m">13</td></tr>
+              <tr><td>Kiernan North</td><td class="m">118</td><td class="m">1,766</td><td class="m">15.0</td><td class="m">14</td><td class="m">14</td></tr>
+              <tr><td>Late Shift</td><td class="m">45</td><td class="m">298</td><td class="m">6.6</td><td class="m">9</td><td class="m">7</td></tr>
+              <tr><td>Sea View</td><td class="m">26</td><td class="m">914</td><td class="m"><b>35.2</b></td><td class="m">21</td><td class="m">4</td></tr>
+              <tr><td>Kiernan South</td><td class="m">24</td><td class="m">766</td><td class="m">31.9</td><td class="m">2</td><td class="m">1</td></tr>
+              <tr><td>Avenel</td><td class="m">21</td><td class="m">321</td><td class="m">15.3</td><td class="m">3</td><td class="m">1</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="col card" style="flex:1">
+          <h3>Joline is the rescue beach</h3>
+          <div class="unit">Share of season totals</div>
+          <div class="bars">
+            <div class="br w"><span class="lab">Rescues</span><span class="tk"><span class="fl a" style="width:41.8%"></span></span><span class="v">41.8%</span></div>
+            <div class="br w"><span class="lab">Cards</span><span class="tk"><span class="fl" style="width:20.3%"></span></span><span class="v">20.3%</span></div>
+          </div>
+          <div class="cap"><b>42% of the season's rescues came off Joline, from 20% of the cards.</b>
+          Kiernan Central is the workhorse — most cards, most preventives, and 37% of all first aid.
+          Sea View and Kiernan South are low-volume, high-intensity: the highest preventive rates on
+          the park.</div>
+        </div>
+      </div>
+    </div>
+
+    <div>
+      <div class="sh"><span class="n">03</span><h2>The four days that defined the summer</h2></div>
+      <div class="days">
+        <div><div class="d">July 3</div><div class="n">51</div><div class="t">Rescues in one afternoon — over a quarter of the season. 29 came off Joline alone. Calm surf, green flag, 95°F.</div></div>
+        <div><div class="d">July 26</div><div class="n">1,951</div><div class="t">Preventive actions — the heaviest single day on record, 11% of the season's total.</div></div>
+        <div><div class="d">July 4</div><div class="n">286</div><div class="t">Guard-hours. 29 guards, 105°F, 21 first-aid calls and 3 of the season's 4 heat emergencies.</div></div>
+        <div><div class="d">July 24</div><div class="n">33</div><div class="t">Guards on duty — the largest single-day roster of the season, 282.8 hours.</div></div>
+      </div>
+    </div>
+
+    <div>
+      <div class="sh"><span class="n">04</span><h2>Who carried it</h2>
+        <span class="r">685.6 OT hours &middot; 103 guard-weeks over 40</span></div>
+      <div class="cols">
+        <div class="col card">
+          <h3>Hours worked</h3><div class="unit">Top 4 &middot; of 10,257 total</div>
+          <div class="bars">
+            <div class="br"><span class="lab">Mcgrouther</span><span class="tk"><span class="fl a" style="width:100%"></span></span><span class="v">604</span></div>
+            <div class="br"><span class="lab">B. Mejia</span><span class="tk"><span class="fl" style="width:91.4%"></span></span><span class="v">552</span></div>
+            <div class="br"><span class="lab">S. Marrin</span><span class="tk"><span class="fl" style="width:84.7%"></span></span><span class="v">512</span></div>
+            <div class="br"><span class="lab">D. Ford</span><span class="tk"><span class="fl" style="width:68.8%"></span></span><span class="v">416</span></div>
+          </div>
+          </div>
+        <div class="col card">
+          <h3>Rescues logged</h3><div class="unit">Top 4 &middot; 24 of 41 guards made one</div>
+          <div class="bars">
+            <div class="br"><span class="lab">L. Bernhaut</span><span class="tk"><span class="fl a" style="width:100%"></span></span><span class="v">23</span></div>
+            <div class="br"><span class="lab">J. Donohoe</span><span class="tk"><span class="fl" style="width:87%"></span></span><span class="v">20</span></div>
+            <div class="br"><span class="lab">G. Montanari</span><span class="tk"><span class="fl" style="width:69.6%"></span></span><span class="v">16</span></div>
+            <div class="br"><span class="lab">RJ Williams</span><span class="tk"><span class="fl" style="width:65.2%"></span></span><span class="v">15</span></div>
+          </div>
+          </div>
+        <div class="col card">
+          <h3>Late shifts</h3><div class="unit">Top 4 &middot; 342 run this season</div>
+          <div class="bars">
+            <div class="br"><span class="lab">B. Mejia</span><span class="tk"><span class="fl a" style="width:100%"></span></span><span class="v">40</span></div>
+            <div class="br"><span class="lab">Mcgrouther</span><span class="tk"><span class="fl a" style="width:97.5%"></span></span><span class="v">39</span></div>
+            <div class="br"><span class="lab">S. Marrin</span><span class="tk"><span class="fl" style="width:75%"></span></span><span class="v">30</span></div>
+            <div class="br"><span class="lab">A. Malek</span><span class="tk"><span class="fl" style="width:65%"></span></span><span class="v">26</span></div>
+          </div>
+        </div>
+      </div>
+      <div class="micro" style="margin-top:3.5pt">Mcgrouther worked <b>604 hours over 64 days</b> — 5.9% of the crew's
+      total, plus three straight 60-hour weeks in June. Rescues cluster by <b>post and day</b>, not by guard:
+      Bernhaut's 23 came from just 7 cards. Mejia and Mcgrouther covered <b>23% of all late shifts</b>.</div>
+    </div>
+
+
+  </div>
+
+  <div class="foot">
+    <span>Seven Presidents STS &middot; Season Report 2026 &middot; <b>Page 1 of 2</b></span>
+    <span>Source: live STS workbook, pulled <b>Aug 6, 2026</b></span>
+  </div>
+</div>
+
+<!-- ================= PAGE 2 ================= -->
+<div class="page">
+  <div class="flagstripe">
+    <i style="width:69.3%;background:var(--fg)"></i>
+    <i style="width:19.6%;background:var(--fy)"></i>
+    <i style="width:11.1%;background:var(--fr)"></i>
+  </div>
+
+  <div class="mast slim">
+    <div class="kick">What the data actually says</div>
+    <h1>Three findings <span>worth acting on</span></h1>
+  </div>
+
+  <div class="body">
+
+    <div>
+      <div class="sh"><span class="n">05</span><h2>Sunshine predicts rescues. Surf doesn't.</h2></div>
+      <div class="find" style="margin-bottom:9pt">
+        <div class="k">10&times;</div>
+        <p>A <b>sunny</b> shift is ten times likelier to produce a rescue than a cloudy one, while calm-to-rough
+        surf moves the rate <b>less than 12%</b>. <b>139 of the season's 189 rescues happened on sunny cards.</b>
+        The ocean isn't what makes the day dangerous — the crowd is.</p>
+      </div>
+      <div class="cols">
+        <div class="col card">
+          <h3>By weather</h3><div class="unit">Rescues per stat card &middot; n = 904</div>
+          <div class="bars">
+            <div class="br w"><span class="lab">Sunny</span><span class="tk"><span class="fl a" style="width:100%"></span></span><span class="v">0.225</span></div>
+            <div class="br w"><span class="lab">Foggy</span><span class="tk"><span class="fl" style="width:34.2%"></span></span><span class="v">0.077</span></div>
+            <div class="br w"><span class="lab">Thunder</span><span class="tk"><span class="fl" style="width:16.9%"></span></span><span class="v">0.038</span></div>
+            <div class="br w"><span class="lab">Cloudy</span><span class="tk"><span class="fl" style="width:9.8%"></span></span><span class="v">0.022</span></div>
+            <div class="br w"><span class="lab">Showers</span><span class="tk"><span class="fl" style="width:8%"></span></span><span class="v">0.018</span></div>
+          </div>
+        </div>
+        <div class="col card">
+          <h3>By surf condition</h3><div class="unit">Rescues per stat card &middot; n = 969</div>
+          <div class="bars">
+            <div class="br w"><span class="lab">Rough</span><span class="tk"><span class="fl" style="width:100%"></span></span><span class="v">0.198</span></div>
+            <div class="br w"><span class="lab">Calm</span><span class="tk"><span class="fl" style="width:91.4%"></span></span><span class="v">0.181</span></div>
+            <div class="br w"><span class="lab">Moderate</span><span class="tk"><span class="fl" style="width:89.4%"></span></span><span class="v">0.177</span></div>
+          </div>
+          <div class="cap"><b>Staff to the forecast's sun, not the surf report.</b> A flat, blazing
+          Saturday is a heavier day than a head-high, overcast one.</div>
+        </div>
+      </div>
+    </div>
+
+    <div>
+      <div class="sh"><span class="n">06</span><h2>Above 85°, everything doubles</h2>
+        <span class="r">Bands 75°+ shown &middot; 896 cards w/ temp</span></div>
+      <div class="cols">
+        <div class="col card" style="flex:1.3">
+          <div class="lg"><span><i style="background:var(--blue)"></i>Preventives / card</span>
+            <span><i style="background:var(--orange)"></i>Rescues / card</span></div>
+          <div class="bars">
+            <div class="br"><span class="lab">90°+</span><span class="tk"><span class="fl" style="width:100%"></span></span><span class="v">32.6</span></div>
+            <div class="br"><span class="lab"></span><span class="tk"><span class="fl o" style="width:100%"></span></span><span class="v">0.386</span></div>
+            <div class="br"><span class="lab">85–89°</span><span class="tk"><span class="fl" style="width:51.8%"></span></span><span class="v">16.9</span></div>
+            <div class="br"><span class="lab"></span><span class="tk"><span class="fl o" style="width:80.8%"></span></span><span class="v">0.312</span></div>
+            <div class="br"><span class="lab">80–84°</span><span class="tk"><span class="fl" style="width:45.4%"></span></span><span class="v">14.8</span></div>
+            <div class="br"><span class="lab"></span><span class="tk"><span class="fl o" style="width:32.9%"></span></span><span class="v">0.127</span></div>
+            <div class="br"><span class="lab">75–79°</span><span class="tk"><span class="fl" style="width:54%"></span></span><span class="v">17.6</span></div>
+            <div class="br"><span class="lab"></span><span class="tk"><span class="fl o" style="width:41.7%"></span></span><span class="v">0.161</span></div>
+          </div>
+        </div>
+        <div class="col card" style="flex:1">
+          <h3>The 85° rule</h3>
+          <div class="unit">One number for a staffing trigger</div>
+          <p style="font-size:7.6pt;line-height:1.5">Under 85°F the crew averaged
+          <b>0.12 rescues and 14.2 preventives</b> per card. At 85° and above:
+          <b>0.35 rescues and 25.9 preventives</b> — <b>2.9× the rescue rate</b> and 1.8× the
+          preventive load.</p>
+          <div class="cap"><b>It's a medical threshold too.</b> All four heat-emergency incidents this
+          season occurred at 85°F or hotter — 85°, 89°, 95° and 102°. Three of the four were on
+          July 4. Hottest card of the year: <b>105°F</b>. Season mean: 80.8°F.</div>
+        </div>
+      </div>
+    </div>
+
+    <div>
+      <div class="sh"><span class="n">07</span><h2>Friday is the sleeper</h2>
+        <span class="r">How often a shift produced a rescue</span></div>
+      <div class="cols">
+        <div class="col card">
+          <h3>Rescues per guard-shift</h3>
+          <div class="unit">Rescues &divide; stat cards filed that weekday</div>
+          <div class="bars">
+            <div class="br f"><span class="lab">Friday</span><span class="tk"><span class="fl a" style="width:100%"></span></span><span class="v">0.442 <u>1 in 2.3</u></span></div>
+            <div class="br f"><span class="lab">Sunday</span><span class="tk"><span class="fl" style="width:51.8%"></span></span><span class="v">0.229 <u>1 in 4.4</u></span></div>
+            <div class="br f"><span class="lab">Saturday</span><span class="tk"><span class="fl" style="width:45.5%"></span></span><span class="v">0.201 <u>1 in 5.0</u></span></div>
+            <div class="br f"><span class="lab">Thursday</span><span class="tk"><span class="fl" style="width:30.1%"></span></span><span class="v">0.133 <u>1 in 7.5</u></span></div>
+            <div class="br f"><span class="lab">Monday</span><span class="tk"><span class="fl" style="width:21.9%"></span></span><span class="v">0.097 <u>1 in 10</u></span></div>
+            <div class="br f"><span class="lab">Tuesday</span><span class="tk"><span class="fl" style="width:12.9%"></span></span><span class="v">0.057 <u>1 in 18</u></span></div>
+            <div class="br f"><span class="lab">Wednesday</span><span class="tk"><span class="fl" style="width:3.8%"></span></span><span class="v">0.017 <u>1 in 60</u></span></div>
+          </div>
+          <div class="cap"><b>Read it as:</b> a Friday shift produced a rescue roughly every other time out —
+          one rescue per <b>2.3 guard-shifts</b>. A Wednesday shift needed <b>60</b>.</div>
+        </div>
+        <div class="col card">
+          <h3>But the crew treats it as a weekday</h3>
+          <div class="unit">Day-off requests &middot; n = 1,096</div>
+          <div class="bars">
+            <div class="br"><span class="lab">Thursday</span><span class="tk"><span class="fl" style="width:100%"></span></span><span class="v">190</span></div>
+            <div class="br"><span class="lab">Tue / Wed</span><span class="tk"><span class="fl" style="width:96.8%"></span></span><span class="v">184</span></div>
+            <div class="br"><span class="lab">Monday</span><span class="tk"><span class="fl" style="width:92.6%"></span></span><span class="v">176</span></div>
+            <div class="br"><span class="lab">Friday</span><span class="tk"><span class="fl a" style="width:91.6%"></span></span><span class="v">174</span></div>
+            <div class="br"><span class="lab">Saturday</span><span class="tk"><span class="fl" style="width:52.1%"></span></span><span class="v">99</span></div>
+            <div class="br"><span class="lab">Sunday</span><span class="tk"><span class="fl" style="width:46.8%"></span></span><span class="v">89</span></div>
+          </div>
+          <div class="cap">Friday's rescue rate is <b>double Saturday's</b> and <b>26× Wednesday's</b> —
+          yet it draws 174 off-requests to Saturday's 99. <b>The one day where crew instinct and the
+          incident data point opposite ways.</b></div>
+        </div>
+      </div>
+    </div>
+
+    <div>
+      <div class="sh"><span class="n">08</span><h2>The clock</h2>
+        <span class="r">1,219 day-shift punches vs the 8:45 start</span></div>
+      <div class="p4">
+        <div><div class="n">92.6%</div><div class="l">In at or before 8:45</div></div>
+        <div><div class="n">18</div><div class="l">Punches &gt;5 min late</div></div>
+        <div><div class="n">10</div><div class="l">Punches &gt;15 min late, all season</div></div>
+        <div><div class="n" style="color:var(--acc)">8.8%</div><div class="l">Shifts auto-closed — forgot to clock out</div></div>
+      </div>
+      <div class="micro" style="margin-top:4pt">Modal clock-in is <b>8:45:00 sharp (817 punches)</b>, with only a thin
+      late tail. The soft spot is the other end of the day — 118 records auto-closed because nobody punched out,
+      driving most of the 1,057 after-the-fact payroll edits. <b>A 5:00 PM clock-out nudge would fix most of it.</b></div>
+    </div>
+
+    <div class="micro" style="border-top:.8pt solid var(--rule);padding-top:5pt">
+      <b>Method —</b> Straight counts off the live STS workbook; no modeling. Nine duplicate stat cards removed
+      (raw: 1,056 cards / 17,604 preventives / 192 rescues). August is partial. Stat cards are self-reported at a
+      77% filing rate — ratios are sound, absolute totals are a floor. Rescue rates are per card, not per day,
+      since staffing changed sharply. Temp bands are lower-inclusive. Punctuality covers 7–10 AM clock-ins only.
+      Voting tallies omitted — ballots are anonymous, results held for the banquet.
+    </div>
+
+  </div>
+
+  <div class="foot">
+    <span>Seven Presidents STS &middot; Season Report 2026 &middot; <b>Page 2 of 2</b></span>
+    <span>Full report: <b>SEASON-REPORT-2026.md</b></span>
+  </div>
+</div>
+
+</body>
+</html>
